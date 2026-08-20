@@ -230,6 +230,7 @@
     <span class="servername">LOL 2</span>
     <span class="dot" id="connDot" title="Estado da conexão"></span>
     <span class="count" id="memberCount"></span>
+    <span id="upBadge" class="stats" style="display:none"></span>
     <div class="spacer"></div>
     <span class="mename" id="meName" title="Clique para trocar seu nome"></span>
     <button class="iconbtn" id="btnDiag" title="Testar conexão">🔧</button>
@@ -855,6 +856,11 @@ $('btnConfirmShare').addEventListener('click', async () => {
       console.warn('nao consegui limitar a resolucao:', e.message);
     }
 
+    // Ao compartilhar tela o Chrome assume "documento" e, faltando banda,
+    // segura a resolucao derrubando os fps (fica em 4 fps a 720p). Para jogo
+    // queremos o contrario: manter a fluidez e baixar a resolucao se precisar.
+    display.getVideoTracks()[0].contentHint = 'motion';
+
     myStream = new MediaStream();
     display.getVideoTracks().forEach(t => myStream.addTrack(t));
 
@@ -887,7 +893,30 @@ function callPeer(peerId) {
   if (peerId === myPeerId || !myStream) return;
   const old = outgoing.get(peerId);
   if (old) old.close();
-  outgoing.set(peerId, peer.call(peerId, myStream));
+  const call = peer.call(peerId, myStream);
+  outgoing.set(peerId, call);
+  priorizarFluidez(call);
+}
+
+// Diz ao codificador: quando faltar banda, prefira BAIXAR A RESOLUCAO em vez
+// de derrubar os quadros por segundo. Sem isso o Chrome segura 720p e entrega
+// 4 fps, que e injogavel. Melhor 480p fluido que 720p travado.
+async function priorizarFluidez(call, tentativa = 0) {
+  const pc = call.peerConnection;
+  if (!pc) return;
+  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+  if (!sender) {
+    if (tentativa < 10) setTimeout(() => priorizarFluidez(call, tentativa + 1), 300);
+    return;
+  }
+  try {
+    const p = sender.getParameters();
+    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    p.degradationPreference = 'maintain-framerate';
+    await sender.setParameters(p);
+  } catch (e) {
+    console.warn('nao consegui priorizar fluidez:', e.message);
+  }
 }
 
 function callPeerCam(peerId) {
@@ -1094,9 +1123,51 @@ async function lerEstatisticas() {
                             + (retransmitido ? ' relay' : '');
 }
 
+// Quanto EU estou enviando, somando todas as pessoas que me assistem.
+// E o numero que revela se o gargalo e a minha internet de envio.
+const ultimoEnvio = new Map();
+
+async function lerEnvio() {
+  const badge = $('upBadge');
+  if (!myStream || !outgoing.size) {
+    badge.style.display = 'none';
+    ultimoEnvio.clear();
+    return;
+  }
+  let totalKbps = 0, fpsMin = null, largura = 0, altura = 0;
+
+  for (const [peerId, call] of outgoing) {
+    const pc = call.peerConnection;
+    if (!pc) continue;
+    const st = await pc.getStats();
+    st.forEach(r => {
+      if (r.type !== 'outbound-rtp' || r.kind !== 'video') return;
+      const ant = ultimoEnvio.get(peerId);
+      if (ant && r.timestamp > ant.ts) {
+        const kbps = ((r.bytesSent - ant.bytes) * 8) / ((r.timestamp - ant.ts) / 1000) / 1000;
+        totalKbps += kbps;
+      }
+      ultimoEnvio.set(peerId, { bytes: r.bytesSent, ts: r.timestamp });
+      const f = Math.round(r.framesPerSecond || 0);
+      if (fpsMin === null || f < fpsMin) fpsMin = f;
+      if (r.frameWidth) { largura = r.frameWidth; altura = r.frameHeight; }
+    });
+  }
+
+  const partes = [`⬆ ${Math.round(totalKbps)} kbps para ${outgoing.size}`];
+  if (largura) partes.push(`${largura}×${altura}`);
+  if (fpsMin !== null) partes.push(`${fpsMin} fps`);
+  badge.textContent = partes.join('  ·  ');
+  badge.className = 'stats' + (fpsMin !== null && fpsMin < 12 ? ' ruim' : '');
+  badge.style.display = '';
+}
+
 function iniciarEstatisticas() {
   clearInterval(statsTimer);
-  statsTimer = setInterval(() => lerEstatisticas().catch(() => {}), 2000);
+  statsTimer = setInterval(() => {
+    lerEstatisticas().catch(() => {});
+    lerEnvio().catch(() => {});
+  }, 2000);
 }
 iniciarEstatisticas();
 
