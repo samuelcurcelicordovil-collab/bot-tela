@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot Tela - LOL 2</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #1a1b1e; color: #e3e5e8; height: 100vh; overflow: hidden;
+  }
+  button {
+    padding: 9px 16px; border: none; border-radius: 6px; cursor: pointer;
+    background: #5865f2; color: #fff; font-size: .9rem; font-family: inherit;
+  }
+  button:hover { background: #4752c4; }
+  button:disabled { background: #454952; cursor: not-allowed; }
+  button.ghost { background: #2b2d31; }
+  button.ghost:hover { background: #3a3d43; }
+  button.danger { background: #da373c; }
+  button.danger:hover { background: #a12828; }
+  input[type=text], select {
+    padding: 10px; border-radius: 6px; border: 1px solid #3f4147;
+    background: #1a1b1e; color: #e3e5e8; font-size: .95rem; font-family: inherit; width: 100%;
+  }
+
+  /* ---------- APP ---------- */
+  #app { display: none; flex-direction: column; height: 100vh; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 18px; background: #232428; border-bottom: 1px solid #2f3136; flex: none;
+  }
+  .lol2 { border-radius: 50%; object-fit: cover; display: block; border: 2px solid #3ba55c; }
+  .lol2.small { width: 32px; height: 32px; flex: none; }
+  .lol2.big { width: 96px; height: 96px; margin: 0 auto 14px;
+              box-shadow: 0 6px 24px rgba(59,165,92,.25); }
+  .lol2.missing { display: none; }
+  .servername { font-weight: 700; color: #3ba55c; letter-spacing: .08em; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #f0b232; flex: none; }
+  .dot.ok { background: #3ba55c; }
+  .dot.bad { background: #da373c; }
+  .count { font-size: .85rem; color: #9aa0a6; }
+  .spacer { flex: 1; }
+  .mename { font-size: .85rem; color: #c9cdd3; cursor: pointer; }
+  .mename:hover { color: #fff; text-decoration: underline; }
+  .iconbtn { background: #2b2d31; padding: 7px 10px; font-size: .85rem; }
+
+  /* banner de reconexao */
+  #netBanner {
+    display: none; background: #6b5417; color: #ffe6a8; font-size: .85rem;
+    padding: 8px 18px; text-align: center; flex: none;
+  }
+  #netBanner.on { display: block; }
+
+  #diagPanel {
+    display: none; background: #232428; border-bottom: 1px solid #2f3136;
+    padding: 12px 18px; font-size: .82rem; line-height: 1.7; flex: none;
+  }
+  #diagPanel.on { display: block; }
+
+  #stage { flex: 1; overflow: auto; padding: 18px; }
+
+  /* ---------- TILES DE PESSOAS (estilo Discord) ---------- */
+  #peopleView { display: grid; gap: 14px; max-width: 1100px; margin: 0 auto;
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+  .ptile {
+    position: relative; background: #232428; border-radius: 12px;
+    aspect-ratio: 16/10; overflow: hidden; border: 1px solid #2f3136;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ptile.live { border-color: #3ba55c; }
+  .ptile video {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; display: none; background: #000;
+  }
+  .ptile.hascam video { display: block; }
+  .ptile video.self { transform: scaleX(-1); } /* espelhado, como o Discord */
+  .ptile .avatar {
+    width: 72px; height: 72px; border-radius: 50%; background: #5865f2;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.6rem;
+  }
+  .ptile.hascam .avatar { display: none; }
+  .namechip {
+    position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.65);
+    padding: 3px 9px; border-radius: 5px; font-size: .8rem; max-width: 60%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .livechip {
+    position: absolute; left: 8px; top: 8px; background: #da373c;
+    padding: 2px 8px; border-radius: 4px; font-size: .68rem; font-weight: 700;
+    display: none;
+  }
+  .ptile.live .livechip { display: block; }
+  .viewchip {
+    position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.65);
+    padding: 2px 8px; border-radius: 4px; font-size: .72rem; color: #9aa0a6;
+    display: none;
+  }
+  .watchbtn {
+    position: absolute; right: 8px; bottom: 8px; padding: 6px 12px;
+    font-size: .8rem; display: none; background: #3ba55c;
+  }
+  .watchbtn:hover { background: #2d8049; }
+
+  /* ---------- ASSISTINDO ---------- */
+  #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
+  .watchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .watchbar .who { font-weight: 600; }
+  .live-badge { background: #da373c; border-radius: 4px; padding: 2px 7px;
+                font-size: .68rem; font-weight: 700; margin-right: 6px; }
+  .switchrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .switchrow .lbl { font-size: .82rem; color: #9aa0a6; }
+  .switchrow button { padding: 6px 12px; font-size: .82rem; }
+  .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
+                overflow: hidden; position: relative; border: 1px solid #2f3136; }
+  .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .framemsg {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; text-align: center;
+    padding: 24px; background: #202225;
+  }
+  .framemsg.on { display: flex; }
+  .framemsg .big { font-size: 2rem; }
+  .framemsg .t { font-weight: 600; }
+  .framemsg .d { font-size: .85rem; color: #9aa0a6; max-width: 42ch; line-height: 1.5; }
+
+  /* ---------- GRADE DE STREAMS ---------- */
+  #gridView { display: none; gap: 14px; }
+  .gtile { position: relative; background: #000; border-radius: 10px; overflow: hidden;
+           aspect-ratio: 16/9; border: 1px solid #2f3136; }
+  .gtile video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .gtile .bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex;
+                align-items: center; gap: 8px; padding: 7px 10px; font-size: .82rem;
+                background: linear-gradient(transparent, rgba(0,0,0,.85)); }
+  .gtile .bar .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gtile .bar button { padding: 4px 9px; font-size: .75rem; background: rgba(255,255,255,.14); }
+  .gtile .bar button:hover { background: rgba(255,255,255,.28); }
+  .empty { color: #6a6f76; font-size: .9rem; }
+  :fullscreen { background: #000; }
+  :fullscreen > video { width: 100%; height: 100%; object-fit: contain; }
+
+  /* ---------- CAMERA FLUTUANTE (por espectador) ---------- */
+  .camoverlay {
+    position: absolute; width: 22%; aspect-ratio: 4/3;
+    background: #000; border: 2px solid rgba(255,255,255,.35); border-radius: 8px;
+    overflow: hidden; cursor: grab; touch-action: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5); display: none;
+  }
+  .camoverlay.on { display: block; }
+  .camoverlay.dragging { cursor: grabbing; border-color: #5865f2; }
+  .camoverlay video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .camctl { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px;
+            opacity: 0; transition: opacity .15s; }
+  .camoverlay:hover .camctl { opacity: 1; }
+  .camctl button { padding: 3px 7px; font-size: .7rem; background: rgba(0,0,0,.7);
+                   border: 1px solid rgba(255,255,255,.25); line-height: 1.2; }
+  .camctl button:hover { background: rgba(0,0,0,.9); }
+  .camhint { position: absolute; left: 0; right: 0; bottom: 0; text-align: center;
+             font-size: .62rem; padding: 2px; background: rgba(0,0,0,.6);
+             opacity: 0; transition: opacity .15s; pointer-events: none; }
+  .camoverlay:hover .camhint { opacity: 1; }
+
+  /* ---------- BARRA DE CONTROLES (estilo Discord) ---------- */
+  #controls {
+    flex: none; display: flex; justify-content: center; gap: 18px;
+    padding: 12px 0 16px; background: #232428; border-top: 1px solid #2f3136;
+  }
+  .ctl { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .ctl button {
+    width: 52px; height: 52px; border-radius: 50%; font-size: 1.3rem;
+    background: #3a3d43; display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .ctl button:hover { background: #4a4e56; }
+  .ctl button.on { background: #3ba55c; }
+  .ctl button.on:hover { background: #2d8049; }
+  .ctl button.stop { background: #da373c; }
+  .ctl button.stop:hover { background: #a12828; }
+  .ctl .lbl { font-size: .68rem; color: #9aa0a6; }
+
+  /* ---------- MODAIS ---------- */
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: none;
+              align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .backdrop.open { display: flex; }
+  .modal { background: #232428; border-radius: 12px; padding: 24px; width: 100%;
+           max-width: 480px; max-height: 90vh; overflow: auto; }
+  .modal h3 { margin: 0 0 4px; font-size: 1.15rem; }
+  .modal .lead { color: #9aa0a6; font-size: .86rem; margin: 0 0 20px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px;
+         border: 1px solid #3f4147; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .opt:hover { border-color: #5865f2; }
+  .opt input { margin-top: 3px; flex: none; }
+  .opt .t { font-size: .92rem; font-weight: 600; margin-bottom: 2px; }
+  .opt .d { font-size: .8rem; color: #9aa0a6; line-height: 1.45; }
+  .note { border-radius: 8px; padding: 11px 13px; font-size: .82rem;
+          line-height: 1.5; margin-top: 12px; }
+  .note.warn { background: #3a2e12; border: 1px solid #6b5417; color: #f0b232; }
+  .note.good { background: #16301f; border: 1px solid #2c5c3b; color: #77d99a; }
+  .modal .actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal .actions button { flex: 1; }
+  #deviceWrap { margin: 4px 0 0 28px; display: none; }
+  #deviceWrap.show { display: block; }
+  .checkline { display: flex; align-items: center; gap: 8px; font-size: .88rem;
+               color: #c9cdd3; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <div class="topbar">
+    <img src="lol2.png" alt="LOL 2" class="lol2 small" onerror="this.classList.add('missing')">
+    <span class="servername">LOL 2</span>
+    <span class="dot" id="connDot" title="Estado da conexão"></span>
+    <span class="count" id="memberCount"></span>
+    <div class="spacer"></div>
+    <span class="mename" id="meName" title="Clique para trocar seu nome"></span>
+    <button class="iconbtn" id="btnDiag" title="Testar conexão">🔧</button>
+  </div>
+
+  <div id="netBanner">⚠️ Conexão com o servidor caiu — reconectando automaticamente...</div>
+  <div id="diagPanel"></div>
+
+  <div id="stage">
+    <div id="peopleView"></div>
+
+    <div id="watchView">
+      <div class="watchbar">
+        <button class="ghost" id="btnBack">← Voltar</button>
+        <span class="who" id="watchWho"></span>
+        <div class="spacer"></div>
+        <button class="ghost" id="btnShowCam" style="display:none">📹 Mostrar câmera</button>
+        <button class="ghost" id="btnMute">🔊 Som ligado</button>
+        <button class="ghost" id="btnFs">⛶ Tela cheia</button>
+      </div>
+      <div class="switchrow" id="switchRow"></div>
+      <div class="videoframe" id="watchFrame">
+        <video id="watchVideo" autoplay playsinline></video>
+        <div id="watchMsg" class="framemsg"></div>
+        <div class="camoverlay" id="watchCam">
+          <video autoplay playsinline muted></video>
+          <div class="camctl">
+            <button data-act="size" title="Tamanho">M</button>
+            <button data-act="hide" title="Esconder">✕</button>
+          </div>
+          <div class="camhint">arraste para mover</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gridView"></div>
+  </div>
+
+  <div id="controls">
+    <div class="ctl">
+      <button id="btnCam" title="Ligar/desligar câmera">📹</button>
+      <span class="lbl">Câmera</span>
+    </div>
+    <div class="ctl">
+      <button id="btnShare" title="Transmitir sua tela">🖥️</button>
+      <span class="lbl" id="shareLbl">Transmitir</span>
+    </div>
+    <div class="ctl">
+      <button id="btnGrid" title="Ver todas as transmissões" disabled>⊞</button>
+      <span class="lbl">Ver todas</span>
+    </div>
+  </div>
+</div>
+
+<!-- ================= NOME (só na primeira vez) ================= -->
+<div class="backdrop" id="nameBackdrop">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <img src="lol2.png" alt="LOL 2" class="lol2 big" onerror="this.classList.add('missing')">
+    <h3>Bem-vindo ao Bot Tela</h3>
+    <p class="lead">Transmissão de telas do servidor <b style="color:#3ba55c">LOL 2</b>. Diga seu nome e você já cai na sala.</p>
+    <input type="text" id="nameInput" placeholder="Como seus amigos te chamam" maxlength="24" autocomplete="off">
+    <div class="actions"><button id="btnEnter">Entrar</button></div>
+  </div>
+</div>
+
+<!-- ================= MODAL DE COMPARTILHAMENTO ================= -->
+<div class="backdrop" id="shareBackdrop">
+  <div class="modal">
+    <h3>Transmitir minha tela</h3>
+    <p class="lead">Escolha de onde vem o som antes de selecionar a tela.</p>
+
+    <label class="opt">
+      <input type="radio" name="aud" value="none" checked>
+      <span>
+        <div class="t">Sem som</div>
+        <div class="d">Só a imagem. O Discord continua intocado.</div>
+      </span>
+    </label>
+
+    <label class="opt">
+      <input type="radio" name="aud" value="display">
+      <span>
+        <div class="t">Som do que eu compartilhar</div>
+        <div class="d">Marque "compartilhar áudio" no seletor do navegador. Numa <b>aba</b>, vem só o som da aba. Na <b>tela inteira</b>, vem o som do sistema todo.</div>
+      </span>
+    </label>
+
+    <label class="opt">
+      <input type="radio" name="aud" value="device">
+      <span>
+        <div class="t">De um dispositivo de áudio</div>
+        <div class="d">Para cabo virtual (VB-Cable). Permite tela inteira com som do jogo e sem o Discord.</div>
+      </span>
+    </label>
+    <div id="deviceWrap">
+      <select id="deviceSelect"><option>Carregando dispositivos...</option></select>
+    </div>
+
+    <label class="checkline">
+      <input type="checkbox" id="micOpt"> Enviar também meu microfone (minha voz)
+    </label>
+
+    <div class="note" id="audNote"></div>
+
+    <div class="actions">
+      <button class="ghost" id="btnCancelShare">Cancelar</button>
+      <button id="btnConfirmShare">Escolher tela</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Rede
+// ============================================================
+let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+let TURN_ATIVO = false;
+
+async function loadIce() {
+  try {
+    const cfg = await (await fetch('/api/ice', { cache: 'no-store' })).json();
+    if (cfg.iceServers && cfg.iceServers.length) ICE_SERVERS = cfg.iceServers;
+    TURN_ATIVO = !!cfg.turn;
+  } catch (e) {
+    console.warn('não consegui buscar servidores de conexão:', e.message);
+  }
+}
+
+function peerOptions() {
+  const isHttps = location.protocol === 'https:';
+  return {
+    host: location.hostname,
+    port: location.port ? Number(location.port) : (isHttps ? 443 : 80),
+    path: '/peerjs', secure: isHttps,
+    config: { iceServers: ICE_SERVERS }
+  };
+}
+
+async function testarConexao() {
+  await loadIce();
+  return new Promise(resolve => {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const achou = { host: 0, srflx: 0, relay: 0 };
+    pc.onicecandidate = e => {
+      if (e.candidate && e.candidate.type in achou) achou[e.candidate.type]++;
+    };
+    pc.createDataChannel('t');
+    pc.createOffer().then(o => pc.setLocalDescription(o));
+    setTimeout(() => { pc.close(); resolve({ achou, turnConfigurado: TURN_ATIVO }); }, 8000);
+  });
+}
+
+// ============================================================
+// Estado
+// ============================================================
+const ROOM = 'LOL2';            // sala unica e fixa: abrir o site ja e entrar
+
+// Identidade estavel por aba: sobrevive a reconexoes, entao quem estava
+// te assistindo continua achando voce pelo mesmo id.
+let myPeerId = sessionStorage.getItem('botTelaId');
+if (!myPeerId) { myPeerId = crypto.randomUUID(); sessionStorage.setItem('botTelaId', myPeerId); }
+
+let myName = localStorage.getItem('botTelaNome') || '';
+let peer = null, ws = null;
+let myStream = null, myCam = null;
+let audioCtx = null;
+
+const members = new Map();      // peerId -> { name, broadcasting, camOn, isMe }
+const watchers = new Set();     // quem assiste a MINHA tela
+const outgoing = new Map();     // peerId -> chamada da minha tela
+const outgoingCam = new Map();  // peerId -> chamada da minha camera
+const streams = new Map();      // telas recebidas
+const camStreams = new Map();   // cameras recebidas
+let subscribed = new Set();
+const connState = new Map();
+
+let mode = 'people';            // 'people' | 'watch' | 'grid'
+let watchTarget = null;
+let muted = false;
+
+const camPref = Object.assign(
+  { x: 3, y: 4, size: 'm', hidden: false },
+  JSON.parse(localStorage.getItem('botTelaCam') || '{}')
+);
+const CAM_SIZES = { p: 14, m: 22, g: 32 };
+function saveCamPref() { localStorage.setItem('botTelaCam', JSON.stringify(camPref)); }
+
+const $ = id => document.getElementById(id);
+
+// ============================================================
+// Entrada: nome uma vez, depois direto pra sala
+// ============================================================
+function start() {
+  if (!myName) {
+    $('nameBackdrop').classList.add('open');
+    $('nameInput').focus();
+    return;
+  }
+  boot();
+}
+
+$('btnEnter').addEventListener('click', () => {
+  const n = $('nameInput').value.trim();
+  if (!n) return;
+  myName = n;
+  localStorage.setItem('botTelaNome', n);
+  $('nameBackdrop').classList.remove('open');
+  boot();
+});
+$('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnEnter').click(); });
+
+$('meName').addEventListener('click', () => {
+  const n = prompt('Seu nome:', myName);
+  if (n && n.trim()) {
+    localStorage.setItem('botTelaNome', n.trim());
+    location.reload();
+  }
+});
+
+async function boot() {
+  $('app').style.display = 'flex';
+  $('meName').textContent = myName;
+  await loadIce();
+  initPeer();
+}
+
+// ============================================================
+// PeerJS com reconexao
+// ============================================================
+let peerRetries = 0;
+
+function initPeer() {
+  peer = new Peer(myPeerId, peerOptions());
+
+  peer.on('open', () => {
+    peerRetries = 0;
+    connectWS();
+  });
+
+  // Queda so da sinalizacao: o PeerJS sabe se religar mantendo o mesmo id.
+  peer.on('disconnected', () => {
+    setDot('warn');
+    try { peer.reconnect(); } catch {}
+  });
+
+  peer.on('call', call => {
+    const isCam = call.metadata && call.metadata.kind === 'cam';
+    const bucket = isCam ? camStreams : streams;
+    call.answer();
+    call.on('stream', remote => {
+      bucket.set(call.peer, remote);
+      if (!isCam) connState.delete(call.peer);
+      render();
+    });
+    if (!isCam) watchConnection(call);
+    const drop = () => { bucket.delete(call.peer); render(); };
+    call.on('close', drop);
+    call.on('error', drop);
+  });
+
+  peer.on('error', err => {
+    if (err.type === 'peer-unavailable') return;
+    // Id ainda preso no servidor (aba anterior caiu ha pouco): espera e tenta
+    // de novo com o MESMO id; se demorar demais, assume um novo.
+    if (err.type === 'unavailable-id') {
+      peerRetries++;
+      if (peerRetries > 6) {
+        myPeerId = crypto.randomUUID();
+        sessionStorage.setItem('botTelaId', myPeerId);
+        peerRetries = 0;
+      }
+      try { peer.destroy(); } catch {}
+      setTimeout(initPeer, 4000);
+      return;
+    }
+    console.warn('peer error:', err.type);
+  });
+}
+
+// Saida limpa: avisa o servidor na hora, em vez de esperar timeout.
+// Sem isso, fechar a aba deixava um "fantasma" na sala por ate 90s
+// e travava o proprio id na volta.
+window.addEventListener('pagehide', () => {
+  try { peer && peer.destroy(); } catch {}
+  try { ws && ws.close(); } catch {}
+});
+
+// ============================================================
+// WebSocket da sala com reconexao automatica
+// ============================================================
+let wsRetries = 0, pingTimer = null;
+
+function setDot(state) {
+  $('connDot').className = 'dot' + (state === 'ok' ? ' ok' : state === 'bad' ? ' bad' : '');
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.addEventListener('open', () => {
+    wsRetries = 0;
+    $('netBanner').classList.remove('on');
+    setDot('ok');
+    // Informa o estado ATUAL: numa reconexao, posso ja estar transmitindo.
+    ws.send(JSON.stringify({
+      type: 'join', room: ROOM, name: myName, peerId: myPeerId,
+      broadcasting: !!myStream, camOn: !!myCam
+    }));
+    // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
+    clearInterval(pingTimer);
+    pingTimer = setInterval(() => {
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    }, 20000);
+  });
+
+  ws.addEventListener('message', ev => handleMsg(JSON.parse(ev.data)));
+
+  ws.addEventListener('close', () => {
+    clearInterval(pingTimer);
+    setDot('bad');
+    $('netBanner').classList.add('on');
+    // Reconecta com espera crescente: 1s, 2s, 4s... maximo 15s.
+    const delay = Math.min(15000, 1000 * 2 ** wsRetries++);
+    setTimeout(connectWS, delay);
+  });
+}
+
+function handleMsg(msg) {
+  if (msg.type === 'pong') return;
+
+  if (msg.type === 'join-ok') {
+    members.clear();
+    msg.members.forEach(m => members.set(m.peerId, {
+      name: m.name, broadcasting: m.broadcasting, camOn: m.camOn
+    }));
+    members.set(myPeerId, {
+      name: myName, broadcasting: !!myStream, camOn: !!myCam, isMe: true
+    });
+    // Reconexao: descarta midia de quem ja saiu e reassina o que eu olhava.
+    [...streams.keys()].forEach(id => { if (!members.has(id)) streams.delete(id); });
+    [...camStreams.keys()].forEach(id => { if (!members.has(id)) camStreams.delete(id); });
+    subscribed = new Set();
+    syncSubs(desiredSubs());
+    // Minha camera vai pra todo mundo que esta na sala.
+    if (myCam) members.forEach((_, id) => callPeerCam(id));
+    render();
+  }
+
+  if (msg.type === 'member-joined' || msg.type === 'member-updated') {
+    members.set(msg.member.peerId, {
+      name: msg.member.name, broadcasting: msg.member.broadcasting, camOn: msg.member.camOn
+    });
+    if (myCam) callPeerCam(msg.member.peerId);
+    // Quem me assistia e reconectou continua na minha lista de watchers;
+    // a chamada de tela dele sera refeita quando ele reassinar (watch-request).
+    render();
+  }
+
+  if (msg.type === 'member-left') {
+    closeOutgoing(msg.peerId);
+    watchers.delete(msg.peerId);
+    members.delete(msg.peerId);
+    streams.delete(msg.peerId);
+    camStreams.delete(msg.peerId);
+    subscribed.delete(msg.peerId);
+    if (watchTarget === msg.peerId) backToPeople();
+    render();
+  }
+
+  if (msg.type === 'broadcast-state') {
+    const m = members.get(msg.peerId);
+    if (m) m.broadcasting = msg.on;
+    if (!msg.on) {
+      streams.delete(msg.peerId);
+      subscribed.delete(msg.peerId);
+      if (watchTarget === msg.peerId) backToPeople();
+    } else if (mode === 'grid') {
+      syncSubs(desiredSubs());
+    }
+    render();
+  }
+
+  if (msg.type === 'cam-state') {
+    const m = members.get(msg.peerId);
+    if (m) m.camOn = msg.on;
+    if (!msg.on) camStreams.delete(msg.peerId);
+    render();
+  }
+
+  if (msg.type === 'watch-request') {
+    watchers.add(msg.from);
+    if (myStream) callPeer(msg.from);
+    render();
+  }
+  if (msg.type === 'unwatch-request') {
+    watchers.delete(msg.from);
+    const c = outgoing.get(msg.from);
+    if (c) { c.close(); outgoing.delete(msg.from); }
+    render();
+  }
+}
+
+// ============================================================
+// Assinaturas de tela (so recebo o que estou olhando)
+// ============================================================
+function desiredSubs() {
+  if (mode === 'watch' && watchTarget && watchTarget !== myPeerId) return new Set([watchTarget]);
+  if (mode === 'grid') {
+    return new Set([...members.entries()]
+      .filter(([id, m]) => m.broadcasting && id !== myPeerId)
+      .map(([id]) => id));
+  }
+  return new Set();
+}
+
+function syncSubs(desired) {
+  if (!ws || ws.readyState !== ws.OPEN) { subscribed = desired; return; }
+  subscribed.forEach(id => {
+    if (!desired.has(id)) {
+      ws.send(JSON.stringify({ type: 'unwatch', target: id }));
+      streams.delete(id);
+    }
+  });
+  desired.forEach(id => {
+    if (!subscribed.has(id)) ws.send(JSON.stringify({ type: 'watch', target: id }));
+  });
+  subscribed = desired;
+}
+
+function watchConnection(call) {
+  const pc = call.peerConnection;
+  if (!pc) return;
+  connState.set(call.peer, 'conectando');
+  pc.addEventListener('iceconnectionstatechange', () => {
+    const s = pc.iceConnectionState;
+    if (s === 'connected' || s === 'completed') connState.delete(call.peer);
+    else if (s === 'failed') connState.set(call.peer, 'falhou');
+    else if (s === 'disconnected') connState.set(call.peer, 'conectando');
+    render();
+  });
+  setTimeout(() => {
+    if (!streams.has(call.peer) && connState.get(call.peer) === 'conectando') {
+      connState.set(call.peer, 'falhou');
+      render();
+    }
+  }, 20000);
+}
+
+// ============================================================
+// Navegação com histórico
+// "Voltar" devolve para a tela ANTERIOR, seja ela qual for — a sala, a
+// grade, ou outra transmissão que você estava vendo antes.
+// ============================================================
+const viewStack = [];
+
+function applyView(newMode, target) {
+  mode = newMode;
+  watchTarget = target || null;
+  syncSubs(desiredSubs());
+  render();
+}
+
+function navigateTo(newMode, target) {
+  if (newMode === mode && (target || null) === watchTarget) return; // ja estou aqui
+  viewStack.push({ mode, watchTarget });
+  if (viewStack.length > 30) viewStack.shift();
+  history.pushState({ depth: viewStack.length }, '');
+  applyView(newMode, target);
+}
+
+function goBackInternal() {
+  while (viewStack.length) {
+    const prev = viewStack.pop();
+    // Pula telas que nao existem mais (alguem parou de transmitir/saiu).
+    if (prev.mode === 'watch') {
+      const m = members.get(prev.watchTarget);
+      if (!m || !m.broadcasting) continue;
+    }
+    applyView(prev.mode, prev.watchTarget);
+    return;
+  }
+  applyView('people', null);
+}
+
+// O botao Voltar e o botao do navegador seguem o mesmo caminho.
+window.addEventListener('popstate', goBackInternal);
+
+function watchPerson(peerId) { navigateTo('watch', peerId); }
+
+function backToPeople() {
+  viewStack.length = 0;
+  applyView('people', null);
+}
+
+function voltar() {
+  if (viewStack.length) history.back();   // dispara popstate -> goBackInternal
+  else applyView('people', null);
+}
+
+$('btnBack').addEventListener('click', voltar);
+$('btnGrid').addEventListener('click', () => {
+  if (mode === 'grid') return voltar();
+  navigateTo('grid', null);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && mode !== 'people' && !document.fullscreenElement) voltar();
+});
+
+// ============================================================
+// Transmitir tela
+// ============================================================
+$('btnShare').addEventListener('click', () => {
+  if (myStream) return stopShare();
+  $('shareBackdrop').classList.add('open');
+  updateAudNote();
+});
+$('btnCancelShare').addEventListener('click', () => $('shareBackdrop').classList.remove('open'));
+
+document.querySelectorAll('input[name=aud]').forEach(r => {
+  r.addEventListener('change', () => {
+    $('deviceWrap').classList.toggle('show', r.value === 'device' && r.checked);
+    if (r.value === 'device' && r.checked) loadDevices();
+    updateAudNote();
+  });
+});
+$('micOpt').addEventListener('change', updateAudNote);
+
+function audioChoice() { return document.querySelector('input[name=aud]:checked').value; }
+
+function updateAudNote() {
+  const note = $('audNote');
+  const choice = audioChoice();
+  if (choice === 'none') {
+    note.className = 'note good';
+    note.innerHTML = '✅ Nenhum som do computador é capturado. É impossível vazar a call do Discord.';
+  } else if (choice === 'display') {
+    note.className = 'note warn';
+    note.innerHTML = '⚠️ Numa <b>aba do navegador</b>, vem só o som da aba — o Discord fica de fora. Na <b>tela inteira</b> com áudio marcado, o som do sistema <b>inteiro</b> vai junto, incluindo a call.';
+  } else {
+    note.className = 'note good';
+    note.innerHTML = '✅ Captura só o dispositivo escolhido. Com um cabo virtual (VB-Cable), dá tela inteira com som do jogo e sem a call.';
+  }
+}
+
+async function loadDevices() {
+  const sel = $('deviceSelect');
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tmp.getTracks().forEach(t => t.stop());
+    const devs = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === 'audioinput');
+    sel.innerHTML = '';
+    devs.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || 'Dispositivo sem nome';
+      sel.appendChild(o);
+    });
+    if (!devs.length) sel.innerHTML = '<option>Nenhum dispositivo encontrado</option>';
+  } catch {
+    sel.innerHTML = '<option>Permissão de áudio negada</option>';
+  }
+}
+
+function mixToOneTrack(sources) {
+  if (sources.length === 0) return null;
+  if (sources.length === 1) return sources[0];
+  audioCtx = audioCtx || new AudioContext();
+  const dest = audioCtx.createMediaStreamDestination();
+  sources.forEach(track => {
+    audioCtx.createMediaStreamSource(new MediaStream([track])).connect(dest);
+  });
+  return dest.stream.getAudioTracks()[0];
+}
+
+$('btnConfirmShare').addEventListener('click', async () => {
+  const choice = audioChoice();
+  const wantMic = $('micOpt').checked;
+  $('shareBackdrop').classList.remove('open');
+
+  try {
+    const display = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      audio: choice === 'display'
+    });
+
+    myStream = new MediaStream();
+    display.getVideoTracks().forEach(t => myStream.addTrack(t));
+
+    const audioTracks = [];
+    if (choice === 'display') display.getAudioTracks().forEach(t => audioTracks.push(t));
+    if (choice === 'device') {
+      const id = $('deviceSelect').value;
+      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } } });
+      dev.getAudioTracks().forEach(t => audioTracks.push(t));
+    }
+    if (wantMic) {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mic.getAudioTracks().forEach(t => audioTracks.push(t));
+    }
+    const mixed = mixToOneTrack(audioTracks);
+    if (mixed) myStream.addTrack(mixed);
+
+    display.getVideoTracks()[0].addEventListener('ended', stopShare);
+
+    members.get(myPeerId).broadcasting = true;
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: true }));
+    watchers.forEach(id => callPeer(id));
+    render();
+  } catch (err) {
+    console.warn('compartilhamento cancelado:', err.message);
+  }
+});
+
+function callPeer(peerId) {
+  if (peerId === myPeerId || !myStream) return;
+  const old = outgoing.get(peerId);
+  if (old) old.close();
+  outgoing.set(peerId, peer.call(peerId, myStream));
+}
+
+function callPeerCam(peerId) {
+  if (peerId === myPeerId || !myCam) return;
+  const old = outgoingCam.get(peerId);
+  if (old) old.close();
+  outgoingCam.set(peerId, peer.call(peerId, myCam, { metadata: { kind: 'cam' } }));
+}
+
+function closeOutgoing(peerId) {
+  const c = outgoing.get(peerId);
+  if (c) { c.close(); outgoing.delete(peerId); }
+  const cc = outgoingCam.get(peerId);
+  if (cc) { cc.close(); outgoingCam.delete(peerId); }
+}
+
+function stopShare() {
+  if (!myStream) return;
+  outgoing.forEach(c => c.close());
+  outgoing.clear();
+  myStream.getTracks().forEach(t => t.stop());
+  myStream = null;
+  const me = members.get(myPeerId);
+  if (me) me.broadcasting = false;
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: false }));
+  if (watchTarget === myPeerId) backToPeople();
+  render();
+}
+
+// ============================================================
+// Câmera — independente da transmissão, como no Discord
+// ============================================================
+$('btnCam').addEventListener('click', async () => {
+  if (myCam) return stopCam();
+  try {
+    myCam = await navigator.mediaDevices.getUserMedia({
+      video: { width: 424, height: 320, frameRate: 24 },
+      audio: false
+    });
+    myCam.getVideoTracks()[0].addEventListener('ended', stopCam);
+    const me = members.get(myPeerId);
+    if (me) me.camOn = true;
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cam-state', on: true }));
+    members.forEach((_, id) => callPeerCam(id));
+    render();
+  } catch (err) {
+    alert('Não consegui acessar a câmera: ' + err.message);
+  }
+});
+
+function stopCam() {
+  if (!myCam) return;
+  outgoingCam.forEach(c => c.close());
+  outgoingCam.clear();
+  myCam.getTracks().forEach(t => t.stop());
+  myCam = null;
+  const me = members.get(myPeerId);
+  if (me) me.camOn = false;
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cam-state', on: false }));
+  render();
+}
+
+// ============================================================
+// Camera flutuante (posicao por espectador)
+// ============================================================
+function applyCamPref(overlay) {
+  const w = CAM_SIZES[camPref.size];
+  overlay.style.width = w + '%';
+  overlay.style.left = Math.min(camPref.x, 100 - w) + '%';
+  overlay.style.top = Math.min(camPref.y, 92) + '%';
+  const btn = overlay.querySelector('[data-act=size]');
+  if (btn) btn.textContent = camPref.size.toUpperCase();
+}
+
+function refreshAllCamOverlays() {
+  document.querySelectorAll('.camoverlay').forEach(applyCamPref);
+}
+
+function wireCamOverlay(overlay) {
+  if (overlay.dataset.wired) return;
+  overlay.dataset.wired = '1';
+
+  overlay.querySelector('[data-act=size]').addEventListener('click', e => {
+    e.stopPropagation();
+    const order = ['p', 'm', 'g'];
+    camPref.size = order[(order.indexOf(camPref.size) + 1) % order.length];
+    saveCamPref();
+    refreshAllCamOverlays();
+  });
+  overlay.querySelector('[data-act=hide]').addEventListener('click', e => {
+    e.stopPropagation();
+    camPref.hidden = true;
+    saveCamPref();
+    render();
+  });
+
+  let dragging = false, grabX = 0, grabY = 0;
+  overlay.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    const box = overlay.getBoundingClientRect();
+    dragging = true;
+    grabX = e.clientX - box.left;
+    grabY = e.clientY - box.top;
+    try { overlay.setPointerCapture(e.pointerId); } catch {}
+    overlay.classList.add('dragging');
+  });
+  overlay.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const parent = overlay.parentElement.getBoundingClientRect();
+    const w = (overlay.offsetWidth / parent.width) * 100;
+    const h = (overlay.offsetHeight / parent.height) * 100;
+    let x = ((e.clientX - grabX - parent.left) / parent.width) * 100;
+    let y = ((e.clientY - grabY - parent.top) / parent.height) * 100;
+    camPref.x = Math.max(0, Math.min(x, 100 - w));
+    camPref.y = Math.max(0, Math.min(y, 100 - h));
+    refreshAllCamOverlays();
+  });
+  const endDrag = e => {
+    if (!dragging) return;
+    dragging = false;
+    overlay.classList.remove('dragging');
+    try { overlay.releasePointerCapture(e.pointerId); } catch {}
+    saveCamPref();
+  };
+  overlay.addEventListener('pointerup', endDrag);
+  overlay.addEventListener('pointercancel', endDrag);
+}
+
+function mountCam(overlay, peerId) {
+  const m = members.get(peerId);
+  const stream = peerId === myPeerId ? myCam : camStreams.get(peerId);
+  const has = !!stream && !!(m && m.camOn);
+  overlay.classList.toggle('on', has && !camPref.hidden);
+  if (!has) return false;
+  const v = overlay.querySelector('video');
+  if (v.srcObject !== stream) v.srcObject = stream;
+  wireCamOverlay(overlay);
+  applyCamPref(overlay);
+  return true;
+}
+
+$('btnShowCam').addEventListener('click', () => {
+  camPref.hidden = false;
+  saveCamPref();
+  render();
+});
+
+// ============================================================
+// Som e tela cheia
+// ============================================================
+$('btnMute').addEventListener('click', () => {
+  muted = !muted;
+  $('watchVideo').muted = muted;
+  $('btnMute').textContent = muted ? '🔇 Som desligado' : '🔊 Som ligado';
+});
+$('btnFs').addEventListener('click', () => {
+  const frame = $('watchFrame');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else frame.requestFullscreen().catch(e => console.warn('tela cheia:', e.message));
+});
+
+// ============================================================
+// Diagnóstico
+// ============================================================
+$('btnDiag').addEventListener('click', async () => {
+  const p = $('diagPanel');
+  if (p.classList.contains('on')) { p.classList.remove('on'); return; }
+  p.classList.add('on');
+  p.innerHTML = '<span style="color:#9aa0a6">Testando a conexão (uns 8 segundos)...</span>';
+  const r = await testarConexao();
+  const ok = c => `<span style="color:#3ba55c">✔</span> ${c}`;
+  const bad = c => `<span style="color:#da373c">✖</span> ${c}`;
+  const warn = c => `<span style="color:#f0b232">⚠</span> ${c}`;
+  const linhas = [];
+  linhas.push(r.achou.srflx
+    ? ok('Consegui descobrir seu IP público (STUN).')
+    : bad('Não consegui descobrir seu IP público — sua rede bloqueia bastante coisa.'));
+  if (!r.turnConfigurado) {
+    linhas.push(warn('Sem servidor de retransmissão (TURN) configurado.'));
+  } else if (r.achou.relay) {
+    linhas.push(ok('Retransmissão (TURN) funcionando — deve conectar em qualquer rede.'));
+  } else {
+    linhas.push(bad('TURN configurado mas sem resposta — credenciais expiradas ou servidor fora.'));
+  }
+  p.innerHTML = linhas.join('<br>') +
+    '<br><button class="ghost" style="margin-top:8px;padding:4px 10px;font-size:.75rem" onclick="this.parentElement.classList.remove(\'on\')">Fechar</button>';
+});
+
+// ============================================================
+// Interface
+// ============================================================
+function initials(name) { return name.trim().slice(0, 2).toUpperCase(); }
+
+function render() {
+  const liveCount = [...members.values()].filter(m => m.broadcasting).length;
+  $('memberCount').textContent = `${members.size} na sala` +
+    (liveCount ? ` · ${liveCount} ao vivo` : '');
+
+  $('btnCam').classList.toggle('on', !!myCam);
+  $('btnCam').title = myCam ? 'Desligar câmera' : 'Ligar câmera';
+  $('btnShare').classList.toggle('stop', !!myStream);
+  $('shareLbl').textContent = myStream ? 'Parar' : 'Transmitir';
+  $('btnGrid').disabled = liveCount === 0;
+  $('btnGrid').classList.toggle('on', mode === 'grid');
+
+  $('peopleView').style.display = mode === 'people' ? 'grid' : 'none';
+  $('watchView').style.display = mode === 'watch' ? 'flex' : 'none';
+  $('gridView').style.display = mode === 'grid' ? 'grid' : 'none';
+
+  if (mode === 'people') renderPeople();
+  if (mode === 'watch') renderWatch();
+  if (mode === 'grid') renderGrid();
+}
+
+// ---- tiles de pessoas (reaproveitados pra nao piscar os videos) ----
+const ptiles = new Map();
+
+function buildPersonTile(peerId) {
+  const tile = document.createElement('div');
+  tile.className = 'ptile';
+  tile.innerHTML = `
+    <video autoplay playsinline muted></video>
+    <div class="avatar"></div>
+    <div class="livechip">AO VIVO</div>
+    <div class="viewchip"></div>
+    <div class="namechip"></div>
+    <button class="watchbtn"></button>`;
+  tile.querySelector('.watchbtn').addEventListener('click', e => {
+    e.stopPropagation();
+    watchPerson(peerId);
+  });
+  return tile;
+}
+
+function renderPeople() {
+  const view = $('peopleView');
+  ptiles.forEach((el, id) => {
+    if (!members.has(id)) { el.remove(); ptiles.delete(id); }
+  });
+
+  // Eu primeiro, depois os outros — como o Discord.
+  const ordem = [myPeerId, ...[...members.keys()].filter(id => id !== myPeerId)];
+
+  ordem.forEach(id => {
+    const m = members.get(id);
+    if (!m) return;
+    let tile = ptiles.get(id);
+    if (!tile) { tile = buildPersonTile(id); ptiles.set(id, tile); }
+
+    const cam = id === myPeerId ? myCam : camStreams.get(id);
+    const v = tile.querySelector('video');
+    tile.classList.toggle('hascam', !!cam);
+    v.classList.toggle('self', id === myPeerId);
+    if (cam && v.srcObject !== cam) v.srcObject = cam;
+    if (!cam && v.srcObject) v.srcObject = null;
+
+    tile.classList.toggle('live', !!m.broadcasting);
+    tile.querySelector('.avatar').textContent = initials(m.name);
+    tile.querySelector('.namechip').textContent = m.name + (m.isMe ? ' (você)' : '');
+
+    const wb = tile.querySelector('.watchbtn');
+    wb.style.display = m.broadcasting ? '' : 'none';
+    wb.textContent = m.isMe ? 'Ver minha transmissão' : 'Assistir';
+
+    const vc = tile.querySelector('.viewchip');
+    if (m.isMe && myStream) {
+      vc.style.display = 'block';
+      const nomes = [...watchers].map(id2 => (members.get(id2) || {}).name).filter(Boolean);
+      vc.textContent = watchers.size ? `👁 ${watchers.size}` : '👁 0';
+      vc.title = nomes.length ? 'Assistindo: ' + nomes.join(', ') : 'Ninguém assistindo ainda';
+    } else vc.style.display = 'none';
+
+    view.appendChild(tile);
+  });
+}
+
+// ---- assistindo uma transmissao ----
+function renderWatch() {
+  const m = members.get(watchTarget);
+  if (!m) return backToPeople();
+
+  $('watchWho').innerHTML =
+    `<span class="live-badge">AO VIVO</span>${m.name}${m.isMe ? ' — sua transmissão' : ''}`;
+
+  // O botao diz pra ONDE volta, em vez de um "voltar" generico.
+  const anterior = [...viewStack].reverse().find(v =>
+    v.mode !== 'watch' || (members.get(v.watchTarget) || {}).broadcasting);
+  let destino = 'a sala';
+  if (anterior) {
+    if (anterior.mode === 'grid') destino = 'a grade';
+    else if (anterior.mode === 'watch') {
+      const mm = members.get(anterior.watchTarget);
+      destino = mm ? mm.name : 'a sala';
+    }
+  }
+  $('btnBack').textContent = '← Voltar para ' + destino;
+
+  mountCam($('watchCam'), watchTarget);
+  const camDisponivel = !!(watchTarget === myPeerId ? myCam : camStreams.get(watchTarget)) && m.camOn;
+  $('btnShowCam').style.display = (camDisponivel && camPref.hidden) ? '' : 'none';
+
+  const video = $('watchVideo');
+  const stream = watchTarget === myPeerId ? myStream : streams.get(watchTarget);
+
+  const msg = $('watchMsg');
+  const estado = connState.get(watchTarget);
+  if (stream) {
+    msg.classList.remove('on');
+  } else if (estado === 'falhou') {
+    msg.classList.add('on');
+    msg.innerHTML = `<div class="big">🚫</div>
+      <div class="t">Não consegui receber esta transmissão</div>
+      <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o 🔧 lá em cima para testar.</div>`;
+  } else {
+    msg.classList.add('on');
+    msg.innerHTML = `<div class="big">⏳</div>
+      <div class="t">Conectando à transmissão...</div>
+      <div class="d">Se ficar assim por mais de 20 segundos, aparece aqui o motivo.</div>`;
+  }
+
+  const souEu = watchTarget === myPeerId;
+  $('btnMute').style.display = souEu ? 'none' : '';
+
+  if (stream && video.srcObject !== stream) {
+    video.srcObject = stream;
+    video.muted = souEu || muted;
+    video.play().catch(() => {
+      video.muted = true; muted = true;
+      $('btnMute').textContent = '🔇 Som desligado (clique para ligar)';
+      video.play().catch(() => {});
+    });
+  }
+  if (!stream && video.srcObject) video.srcObject = null;
+
+  // Seletor sempre visivel com TODAS as transmissoes numeradas — a atual
+  // fica destacada. Trocar direto, sem precisar voltar antes.
+  const row = $('switchRow');
+  const live = [...members.entries()].filter(([, mm]) => mm.broadcasting);
+  row.innerHTML = '';
+  if (live.length > 1) {
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = 'Transmissões:';
+    row.appendChild(lbl);
+    live.forEach(([id, mm], i) => {
+      const b = document.createElement('button');
+      b.className = 'ghost' + (id === watchTarget ? ' on' : '');
+      b.textContent = `${i + 1} · ${mm.name}${id === myPeerId ? ' (você)' : ''}`;
+      if (id !== watchTarget) b.addEventListener('click', () => watchPerson(id));
+      row.appendChild(b);
+    });
+  }
+}
+
+// ---- grade de todas as transmissoes ----
+const gtiles = new Map();
+
+function buildGridTile(peerId) {
+  const tile = document.createElement('div');
+  tile.className = 'gtile';
+  const v = document.createElement('video');
+  v.autoplay = true; v.playsInline = true;
+  tile.appendChild(v);
+
+  const cam = document.createElement('div');
+  cam.className = 'camoverlay';
+  cam.innerHTML = `<video autoplay playsinline muted></video>
+    <div class="camctl">
+      <button data-act="size" title="Tamanho">M</button>
+      <button data-act="hide" title="Esconder">✕</button>
+    </div>
+    <div class="camhint">arraste para mover</div>`;
+  tile.appendChild(cam);
+
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.innerHTML = '<span class="who"></span>';
+  if (peerId !== myPeerId) {
+    const b = document.createElement('button');
+    b.textContent = 'Só esta';
+    b.addEventListener('click', () => watchPerson(peerId));
+    bar.appendChild(b);
+  }
+  const fs = document.createElement('button');
+  fs.textContent = '⛶';
+  fs.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else tile.requestFullscreen().catch(() => {});
+  });
+  bar.appendChild(fs);
+  tile.appendChild(bar);
+  return tile;
+}
+
+function renderGrid() {
+  const grid = $('gridView');
+  const live = [...members.entries()].filter(([, m]) => m.broadcasting);
+  const liveIds = new Set(live.map(([id]) => id));
+
+  gtiles.forEach((el, id) => {
+    if (!liveIds.has(id)) { el.remove(); gtiles.delete(id); }
+  });
+  const emptyMsg = grid.querySelector('.empty');
+  if (emptyMsg) emptyMsg.remove();
+
+  grid.style.gridTemplateColumns =
+    `repeat(${Math.min(Math.ceil(Math.sqrt(Math.max(live.length, 1))), 3)}, 1fr)`;
+
+  live.forEach(([id, m]) => {
+    let tile = gtiles.get(id);
+    if (!tile) { tile = buildGridTile(id); gtiles.set(id, tile); }
+    const v = tile.querySelector(':scope > video');
+    const stream = id === myPeerId ? myStream : streams.get(id);
+    if (stream && v.srcObject !== stream) v.srcObject = stream;
+    if (!stream && v.srcObject) v.srcObject = null;
+    v.muted = (id === myPeerId) || muted;
+    mountCam(tile.querySelector('.camoverlay'), id);
+    tile.querySelector('.who').textContent = m.name + (id === myPeerId ? ' (você)' : '');
+    grid.appendChild(tile);
+  });
+
+  if (!live.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = 'Ninguém está transmitindo agora.';
+    grid.appendChild(d);
+  }
+}
+
+start();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Configuracao para hospedar no Render (render.com).
+# Com este arquivo no repositorio, o Render preenche tudo sozinho —
+# voce so precisa cadastrar os segredos do TURN no painel.
+services:
+  - type: web
+    name: bot-tela-lol2
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TURN_HOST
+        sync: false          # preencher no painel (nao vai pro Git)
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: TURN_PORTS
+        value: "3478"

@@ -1,0 +1,21 @@
+{
+  "_leia_isto": [
+    "Copie este arquivo para 'turn.json' e preencha UM dos modos abaixo.",
+    "Sem TURN, quem estiver em rede restritiva (4G, rede corporativa, alguns",
+    "provedores) vai ver a tela preta enquanto os outros assistem normalmente.",
+    "Apague os campos dos modos que voce NAO for usar."
+  ],
+
+  "_modo_1_metered": "Crie conta gratis em metered.ca (20GB/mes). No painel, pegue a API key e o nome do app.",
+  "meteredApiKey": "",
+  "meteredApp": "",
+
+  "_modo_2_servidor_proprio_com_segredo": "Se voce subir um coturn com 'use-auth-secret'.",
+  "host": "",
+  "secret": "",
+  "ports": [3478, 443],
+
+  "_modo_3_usuario_e_senha_fixos": "Se o seu TURN usa login fixo.",
+  "username": "",
+  "credential": ""
+}

@@ -1,0 +1,7 @@
+# NUNCA suba isto: contem a senha do TURN.
+# No servidor hospedado, use variaveis de ambiente no painel.
+turn.json
+
+node_modules/
+npm-debug.log*
+.env
