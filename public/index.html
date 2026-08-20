@@ -230,6 +230,7 @@
     <span class="servername">LOL 2</span>
     <span class="dot" id="connDot" title="Estado da conexão"></span>
     <span class="count" id="memberCount"></span>
+    <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue no 🔧 se não precisar.">🔁 retransmissão forçada</span>
     <span id="upBadge" class="stats" style="display:none"></span>
     <div class="spacer"></div>
     <span class="mename" id="meName" title="Clique para trocar seu nome"></span>
@@ -372,13 +373,20 @@ async function loadIce() {
   }
 }
 
+// Preferencia sua: obrigar todas as suas conexoes a passar pelo servidor de
+// retransmissao em vez de irem direto. Serve como experimento quando o
+// caminho direto esta com perda de pacotes ou rota ruim.
+const forcarRelay = () => localStorage.getItem('botTelaForcarRelay') === '1';
+
 function peerOptions() {
   const isHttps = location.protocol === 'https:';
+  const config = { iceServers: ICE_SERVERS };
+  if (forcarRelay()) config.iceTransportPolicy = 'relay';
   return {
     host: location.hostname,
     port: location.port ? Number(location.port) : (isHttps ? 443 : 80),
     path: '/peerjs', secure: isHttps,
-    config: { iceServers: ICE_SERVERS }
+    config
   };
 }
 
@@ -467,6 +475,7 @@ $('meName').addEventListener('click', () => {
 async function boot() {
   $('app').style.display = 'flex';
   $('meName').textContent = myName;
+  $('relayBadge').style.display = forcarRelay() ? '' : 'none';
   await loadIce();
   initPeer();
 }
@@ -1208,8 +1217,29 @@ $('btnDiag').addEventListener('click', async () => {
   } else {
     linhas.push(bad('TURN configurado mas sem resposta — credenciais expiradas ou servidor fora.'));
   }
-  p.innerHTML = linhas.join('<br>') +
-    '<br><button class="ghost" style="margin-top:8px;padding:4px 10px;font-size:.75rem" onclick="this.parentElement.classList.remove(\'on\')">Fechar</button>';
+  const marcado = forcarRelay() ? 'checked' : '';
+  p.innerHTML = linhas.join('<br>') + `
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2f3136">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" id="chkRelay" ${marcado} style="margin-top:3px">
+        <span>
+          <b>Forçar retransmissão</b> — desvia minhas conexões pelo servidor de retransmissão
+          em vez de irem direto.
+          <div style="color:#9aa0a6;margin-top:4px">
+            Só tente isto se a sua imagem estiver travando <b>com perda de pacotes</b>.
+            Normalmente o caminho direto é melhor: retransmitir adiciona atraso.
+            Isto <b>não</b> aumenta a internet de quem transmite. A página recarrega ao mudar.
+          </div>
+        </span>
+      </label>
+    </div>
+    <button class="ghost" style="margin-top:10px;padding:4px 10px;font-size:.75rem" id="btnFecharDiag">Fechar</button>`;
+
+  $('chkRelay').addEventListener('change', e => {
+    localStorage.setItem('botTelaForcarRelay', e.target.checked ? '1' : '0');
+    location.reload();   // a politica de rede so vale ao criar a conexao
+  });
+  $('btnFecharDiag').addEventListener('click', () => p.classList.remove('on'));
 });
 
 // ============================================================
