@@ -104,7 +104,13 @@
     position: absolute; right: 8px; bottom: 8px; padding: 6px 12px;
     font-size: .8rem; display: none; background: #3ba55c;
   }
+  /* Visibilidade pelo CSS, nao pelo JS: definir style.display = '' apaga o
+     estilo inline e faz cair no display:none daqui — o botao nunca aparecia. */
+  .ptile.live .watchbtn { display: block; }
   .watchbtn:hover { background: #2d8049; }
+  .ptile.live { cursor: pointer; }
+  .ptile.live:hover { border-color: #57d98a; }
+  .ptile.live:hover .watchbtn { background: #2d8049; }
 
   /* ---------- ASSISTINDO ---------- */
   #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
@@ -115,6 +121,13 @@
   .switchrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .switchrow .lbl { font-size: .82rem; color: #9aa0a6; }
   .switchrow button { padding: 6px 12px; font-size: .82rem; }
+  .stats {
+    font-family: ui-monospace, Consolas, monospace; font-size: .72rem;
+    color: #9aa0a6; background: #1f2023; border: 1px solid #2f3136;
+    border-radius: 5px; padding: 4px 8px; white-space: nowrap;
+  }
+  .stats.ruim { color: #f0b232; border-color: #6b5417; }
+  .stats.relay { color: #f0b232; }
   .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
                 overflow: hidden; position: relative; border: 1px solid #2f3136; }
   .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -233,6 +246,7 @@
         <button class="ghost" id="btnBack">← Voltar</button>
         <span class="who" id="watchWho"></span>
         <div class="spacer"></div>
+        <span id="statsBadge" class="stats"></span>
         <button class="ghost" id="btnShowCam" style="display:none">📹 Mostrar câmera</button>
         <button class="ghost" id="btnMute">🔊 Som ligado</button>
         <button class="ghost" id="btnFs">⛶ Tela cheia</button>
@@ -286,7 +300,19 @@
 <div class="backdrop" id="shareBackdrop">
   <div class="modal">
     <h3>Transmitir minha tela</h3>
-    <p class="lead">Escolha de onde vem o som antes de selecionar a tela.</p>
+    <p class="lead">Ajuste a qualidade e o som antes de selecionar a tela.</p>
+
+    <div class="field" style="margin-bottom:18px">
+      <label style="display:block;font-size:.82rem;color:#9aa0a6;margin-bottom:6px">Qualidade</label>
+      <select id="qualSelect">
+        <option value="720" selected>720p — padrão</option>
+        <option value="480">480p — se estiver travando</option>
+      </select>
+      <div style="font-size:.78rem;color:#6a6f76;margin-top:6px">
+        720p é o teto para todo mundo. Se a imagem travar, 480p usa bem menos internet
+        — lembrando que o envio é dividido por cada pessoa que está assistindo.
+      </div>
+    </div>
 
     <label class="opt">
       <input type="radio" name="aud" value="none" checked>
@@ -390,6 +416,7 @@ const outgoing = new Map();     // peerId -> chamada da minha tela
 const outgoingCam = new Map();  // peerId -> chamada da minha camera
 const streams = new Map();      // telas recebidas
 const camStreams = new Map();   // cameras recebidas
+const incomingCalls = new Map();// peerId -> chamada recebida (para ler estatisticas)
 let subscribed = new Set();
 const connState = new Map();
 
@@ -471,7 +498,7 @@ function initPeer() {
       if (!isCam) connState.delete(call.peer);
       render();
     });
-    if (!isCam) watchConnection(call);
+    if (!isCam) { incomingCalls.set(call.peer, call); watchConnection(call); }
     const drop = () => { bucket.delete(call.peer); render(); };
     call.on('close', drop);
     call.on('error', drop);
@@ -731,6 +758,8 @@ document.addEventListener('keydown', e => {
 // ============================================================
 $('btnShare').addEventListener('click', () => {
   if (myStream) return stopShare();
+  const salva = localStorage.getItem('botTelaQualidade');
+  if (salva) $('qualSelect').value = salva;
   $('shareBackdrop').classList.add('open');
   updateAudNote();
 });
@@ -799,10 +828,32 @@ $('btnConfirmShare').addEventListener('click', async () => {
   $('shareBackdrop').classList.remove('open');
 
   try {
+    // Sem limite de resolucao o navegador captura no tamanho nativo do
+    // monitor (1440p, 4K...), o que estoura a internet de envio e faz a
+    // imagem travar do lado de quem assiste.
+    // Teto de 720p para todos. Qualquer valor inesperado cai em 720.
+    const qual = $('qualSelect').value === '480' ? 480 : 720;
+    localStorage.setItem('botTelaQualidade', String(qual));
+    const video = {
+      frameRate: 30,
+      width: { max: qual === 480 ? 854 : 1280 },
+      height: { max: qual }
+    };
+
     const display = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
+      video,
       audio: choice === 'display'
     });
+
+    // Reforco: o Chrome as vezes entrega a tela em resolucao nativa mesmo
+    // com o limite pedido acima. Aplicar de novo na faixa garante o teto.
+    try {
+      await display.getVideoTracks()[0].applyConstraints({
+        width: video.width, height: video.height, frameRate: 30
+      });
+    } catch (e) {
+      console.warn('nao consegui limitar a resolucao:', e.message);
+    }
 
     myStream = new MediaStream();
     display.getVideoTracks().forEach(t => myStream.addTrack(t));
@@ -985,6 +1036,71 @@ $('btnShowCam').addEventListener('click', () => {
 });
 
 // ============================================================
+// Estatísticas da transmissão que estou vendo
+// Mostra o CAMINHO real (direto ou retransmitido) e a taxa de dados —
+// é o que diz se o travamento é da rede, do caminho ou da resolução.
+// ============================================================
+let statsTimer = null;
+let ultimaMedida = null;
+
+async function lerEstatisticas() {
+  const badge = $('statsBadge');
+  if (mode !== 'watch' || !watchTarget || watchTarget === myPeerId) {
+    badge.textContent = '';
+    ultimaMedida = null;
+    return;
+  }
+  const call = incomingCalls.get(watchTarget);
+  const pc = call && call.peerConnection;
+  if (!pc) { badge.textContent = ''; return; }
+
+  const st = await pc.getStats();
+  let video = null, par = null, local = null, remoto = null;
+  st.forEach(r => {
+    if (r.type === 'inbound-rtp' && r.kind === 'video') video = r;
+    if (r.type === 'candidate-pair' && (r.state === 'succeeded' || r.nominated)) par = r;
+  });
+  if (par) st.forEach(r => {
+    if (r.id === par.localCandidateId) local = r.candidateType;
+    if (r.id === par.remoteCandidateId) remoto = r.candidateType;
+  });
+  if (!video) { badge.textContent = 'medindo...'; return; }
+
+  // Taxa de dados = diferenca de bytes entre duas leituras.
+  let kbps = null;
+  if (ultimaMedida && video.timestamp > ultimaMedida.ts) {
+    const dBytes = video.bytesReceived - ultimaMedida.bytes;
+    const dTempo = (video.timestamp - ultimaMedida.ts) / 1000;
+    kbps = Math.round((dBytes * 8) / dTempo / 1000);
+  }
+  ultimaMedida = { bytes: video.bytesReceived, ts: video.timestamp };
+
+  const retransmitido = local === 'relay' || remoto === 'relay';
+  const fps = Math.round(video.framesPerSecond || 0);
+  const largura = video.frameWidth || 0, altura = video.frameHeight || 0;
+  const perdidos = video.packetsLost || 0;
+  const recebidos = (video.packetsReceived || 0) + perdidos;
+  const perda = recebidos ? ((perdidos / recebidos) * 100).toFixed(1) : '0.0';
+
+  const partes = [];
+  partes.push(retransmitido ? '🔁 retransmitido' : '⚡ direto');
+  if (largura) partes.push(`${largura}×${altura}`);
+  partes.push(`${fps} fps`);
+  if (kbps !== null) partes.push(`${kbps} kbps`);
+  if (perdidos) partes.push(`perda ${perda}%`);
+
+  badge.textContent = partes.join('  ·  ');
+  badge.className = 'stats' + ((fps > 0 && fps < 12) || parseFloat(perda) > 3 ? ' ruim' : '')
+                            + (retransmitido ? ' relay' : '');
+}
+
+function iniciarEstatisticas() {
+  clearInterval(statsTimer);
+  statsTimer = setInterval(() => lerEstatisticas().catch(() => {}), 2000);
+}
+iniciarEstatisticas();
+
+// ============================================================
 // Som e tela cheia
 // ============================================================
 $('btnMute').addEventListener('click', () => {
@@ -1068,6 +1184,11 @@ function buildPersonTile(peerId) {
     e.stopPropagation();
     watchPerson(peerId);
   });
+  // O quadro inteiro tambem abre a transmissao, nao so o botao.
+  tile.addEventListener('click', () => {
+    const m = members.get(peerId);
+    if (m && m.broadcasting) watchPerson(peerId);
+  });
   return tile;
 }
 
@@ -1098,8 +1219,7 @@ function renderPeople() {
     tile.querySelector('.namechip').textContent = m.name + (m.isMe ? ' (você)' : '');
 
     const wb = tile.querySelector('.watchbtn');
-    wb.style.display = m.broadcasting ? '' : 'none';
-    wb.textContent = m.isMe ? 'Ver minha transmissão' : 'Assistir';
+    wb.textContent = m.isMe ? 'Ver minha transmissão' : 'Assistir transmissão';
 
     const vc = tile.querySelector('.viewchip');
     if (m.isMe && myStream) {
