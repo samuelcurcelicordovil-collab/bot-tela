@@ -113,7 +113,7 @@
   .ptile.live:hover .watchbtn { background: #2d8049; }
 
   /* ---------- ASSISTINDO ---------- */
-  #watchView { display: none; flex-direction: column; min-height: 100%; gap: 10px; }
+  #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
   .watchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .watchbar .who { font-weight: 600; }
   .live-badge { background: #da373c; border-radius: 4px; padding: 2px 7px;
@@ -121,6 +121,15 @@
   .switchrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .switchrow .lbl { font-size: .82rem; color: #9aa0a6; }
   .switchrow button { padding: 6px 12px; font-size: .82rem; }
+  .volctl { display: flex; align-items: center; gap: 7px; }
+  .volctl input[type=range] {
+    width: 92px; accent-color: #5865f2; cursor: pointer; height: 4px;
+  }
+  .volctl .val {
+    font-family: ui-monospace, Consolas, monospace; font-size: .72rem;
+    color: #9aa0a6; min-width: 32px; text-align: right;
+  }
+
   .stats {
     font-family: ui-monospace, Consolas, monospace; font-size: .72rem;
     color: #9aa0a6; background: #1f2023; border: 1px solid #2f3136;
@@ -128,21 +137,9 @@
   }
   .stats.ruim { color: #f0b232; border-color: #6b5417; }
   .stats.relay { color: #f0b232; }
-  .videoframe { flex: 0 0 auto; height: var(--alturaVideo, 60vh); min-height: 140px;
-                background: #000; border-radius: 12px;
+  .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
                 overflow: hidden; position: relative; border: 1px solid #2f3136; }
   .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .videoframe:fullscreen { height: 100%; }
-  .alturactl { display: flex; align-items: center; gap: 4px; }
-  .alturactl button {
-    width: 26px; height: 26px; padding: 0; font-size: .95rem; line-height: 1;
-    display: flex; align-items: center; justify-content: center; background: #2b2d31;
-  }
-  .alturactl button:hover:not(:disabled) { background: #3a3d43; }
-  .alturactl .val {
-    font-family: ui-monospace, Consolas, monospace; font-size: .72rem;
-    color: #9aa0a6; min-width: 34px; text-align: center;
-  }
   .framemsg {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: center; gap: 10px; text-align: center;
@@ -290,10 +287,9 @@
         <span id="statsBadge" class="stats"></span>
         <button class="ghost" id="btnShowCam" style="display:none">📹 Mostrar câmera</button>
         <button class="ghost" id="btnMute">🔊 Som ligado</button>
-        <span class="alturactl" title="Altura da tela transmitida">
-          <button class="ghost" id="btnMenor">−</button>
-          <span class="val" id="alturaVal"></span>
-          <button class="ghost" id="btnMaior">+</button>
+        <span class="volctl" id="volCtl" title="Volume (teclas ↑ e ↓)">
+          <input type="range" id="volRange" min="0" max="100" step="5">
+          <span class="val" id="volVal"></span>
         </span>
         <button class="ghost" id="btnFs">⛶ Tela cheia</button>
       </div>
@@ -1349,49 +1345,70 @@ function iniciarEstatisticas() {
 iniciarEstatisticas();
 
 // ============================================================
-// Altura da tela transmitida
-// Preferencia sua, guardada no navegador. Nao afeta ninguem mais.
-// ============================================================
-const ALTURA_MIN = 25, ALTURA_MAX = 90, ALTURA_PASSO = 5;
-let alturaVideo = Number(localStorage.getItem('botTelaAltura')) || 60;
-
-function aplicarAltura() {
-  alturaVideo = Math.max(ALTURA_MIN, Math.min(ALTURA_MAX, alturaVideo));
-  document.documentElement.style.setProperty('--alturaVideo', alturaVideo + 'vh');
-  const val = $('alturaVal');
-  if (val) val.textContent = alturaVideo + '%';
-  const menor = $('btnMenor'), maior = $('btnMaior');
-  if (menor) menor.disabled = alturaVideo <= ALTURA_MIN;
-  if (maior) maior.disabled = alturaVideo >= ALTURA_MAX;
-  localStorage.setItem('botTelaAltura', String(alturaVideo));
-}
-
-function mudarAltura(delta) {
-  alturaVideo += delta;
-  aplicarAltura();
-}
-
-$('btnMenor').addEventListener('click', () => mudarAltura(-ALTURA_PASSO));
-$('btnMaior').addEventListener('click', () => mudarAltura(ALTURA_PASSO));
-
-// Atalhos: + e - enquanto assiste (fora de campos de texto)
-document.addEventListener('keydown', e => {
-  if (mode !== 'watch' || document.fullscreenElement) return;
-  if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
-  if (e.key === '+' || e.key === '=') { mudarAltura(ALTURA_PASSO); e.preventDefault(); }
-  if (e.key === '-' || e.key === '_') { mudarAltura(-ALTURA_PASSO); e.preventDefault(); }
-});
-
-aplicarAltura();
-
-// ============================================================
 // Som e tela cheia
 // ============================================================
-$('btnMute').addEventListener('click', () => {
-  muted = !muted;
-  $('watchVideo').muted = muted;
-  $('btnMute').textContent = muted ? '🔇 Som desligado' : '🔊 Som ligado';
+// ============================================================
+// Volume — preferencia sua, guardada no navegador.
+// Vale para quem voce assiste; nao muda nada para os outros.
+// ============================================================
+let volume = localStorage.getItem('botTelaVolume');
+volume = volume === null ? 100 : Number(volume);
+
+function aplicarVolume() {
+  volume = Math.max(0, Math.min(100, Math.round(volume)));
+  localStorage.setItem('botTelaVolume', String(volume));
+
+  const v = $('watchVideo');
+  v.volume = volume / 100;
+  // Volume zero equivale a mudo, entao os dois controles andam juntos.
+  v.muted = muted || volume === 0;
+
+  // A grade tambem obedece (o meu proprio quadro continua sempre mudo).
+  document.querySelectorAll('#gridView .gtile video').forEach(el => {
+    el.volume = volume / 100;
+  });
+
+  const range = $('volRange'), val = $('volVal');
+  if (range && range.value !== String(volume)) range.value = volume;
+  if (val) val.textContent = volume + '%';
+  $('btnMute').textContent = (muted || volume === 0)
+    ? '🔇 Som desligado' : '🔊 Som ligado';
+}
+
+function mudarVolume(delta) {
+  volume += delta;
+  if (volume > 0) muted = false;   // subir o volume desfaz o mudo
+  aplicarVolume();
+}
+
+$('volRange').addEventListener('input', e => {
+  volume = Number(e.target.value);
+  if (volume > 0) muted = false;
+  aplicarVolume();
 });
+
+$('btnMute').addEventListener('click', () => {
+  // O botao alterna 'tem som ou nao'. Sem isto, com o volume em zero o
+  // primeiro clique so mexia numa variavel interna e parecia nao fazer nada.
+  const semSom = muted || volume === 0;
+  if (semSom) {
+    muted = false;
+    if (volume === 0) volume = 50;
+  } else {
+    muted = true;
+  }
+  aplicarVolume();
+});
+
+// Setas para cima e para baixo ajustam o volume enquanto assiste.
+document.addEventListener('keydown', e => {
+  if (mode !== 'watch') return;
+  if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
+  if (e.key === 'ArrowUp') { mudarVolume(10); e.preventDefault(); }
+  if (e.key === 'ArrowDown') { mudarVolume(-10); e.preventDefault(); }
+});
+
+aplicarVolume();
 $('btnFs').addEventListener('click', () => {
   const frame = $('watchFrame');
   if (document.fullscreenElement) document.exitFullscreen();
@@ -1598,10 +1615,12 @@ function renderWatch() {
 
   const souEu = watchTarget === myPeerId;
   $('btnMute').style.display = souEu ? 'none' : '';
+  $('volCtl').style.display = souEu ? 'none' : '';   // a propria tela e sempre muda
 
   if (stream && video.srcObject !== stream) {
     video.srcObject = stream;
-    video.muted = souEu || muted;
+    video.volume = volume / 100;
+    video.muted = souEu || muted || volume === 0;
     video.play().catch(() => {
       video.muted = true; muted = true;
       $('btnMute').textContent = '🔇 Som desligado (clique para ligar)';
