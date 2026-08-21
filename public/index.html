@@ -177,6 +177,33 @@
              opacity: 0; transition: opacity .15s; pointer-events: none; }
   .camoverlay:hover .camhint { opacity: 1; }
 
+  /* ---------- FAIXA DE CÂMERAS (embaixo da transmissão) ---------- */
+  #camStrip {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    flex: 0 0 auto; padding-top: 2px;
+  }
+  #camStrip:empty { display: none; }
+  .camtile {
+    width: 168px; aspect-ratio: 4/3; background: #000; border-radius: 8px;
+    overflow: hidden; position: relative; border: 1px solid #2f3136;
+    cursor: pointer; flex: none;
+  }
+  .camtile:hover { border-color: #5865f2; }
+  .camtile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .camtile video.self { transform: scaleX(-1); }
+  .camtile .nm {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px;
+    background: rgba(0,0,0,.7); font-size: .72rem; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .camtile .fsicon {
+    position: absolute; top: 4px; right: 5px; font-size: .72rem;
+    background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 5px;
+    opacity: 0; transition: opacity .15s;
+  }
+  .camtile:hover .fsicon { opacity: 1; }
+  .camtile:fullscreen video { object-fit: contain; }
+
   /* ---------- BARRA DE CONTROLES (estilo Discord) ---------- */
   #controls {
     flex: none; display: flex; justify-content: center; gap: 18px;
@@ -260,12 +287,14 @@
         <div class="camoverlay" id="watchCam">
           <video autoplay playsinline muted></video>
           <div class="camctl">
+            <button data-act="full" title="Tela cheia">⛶</button>
             <button data-act="size" title="Tamanho">M</button>
             <button data-act="hide" title="Esconder">✕</button>
           </div>
-          <div class="camhint">arraste para mover</div>
+          <div class="camhint">arraste para mover · duplo clique = tela cheia</div>
         </div>
       </div>
+      <div id="camStrip"></div>
     </div>
 
     <div id="gridView"></div>
@@ -1022,6 +1051,16 @@ function wireCamOverlay(overlay) {
     render();
   });
 
+  overlay.querySelector('[data-act=full]').addEventListener('click', e => {
+    e.stopPropagation();
+    telaCheia(overlay);
+  });
+  // Clique simples arrastaria; duplo clique e inequivoco.
+  overlay.addEventListener('dblclick', e => {
+    if (e.target.closest('button')) return;
+    telaCheia(overlay);
+  });
+
   let dragging = false, grabX = 0, grabY = 0;
   overlay.addEventListener('pointerdown', e => {
     if (e.target.closest('button')) return;
@@ -1052,6 +1091,52 @@ function wireCamOverlay(overlay) {
   };
   overlay.addEventListener('pointerup', endDrag);
   overlay.addEventListener('pointercancel', endDrag);
+}
+
+// ---- faixa de cameras embaixo da transmissao ----
+// Mostra todo mundo que esta com a camera ligada, menos quem esta sendo
+// assistido (a camera dessa pessoa e a flutuante, por cima do video).
+const camtiles = new Map();
+
+function telaCheia(el) {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else el.requestFullscreen().catch(e => console.warn('tela cheia:', e.message));
+}
+
+function buildCamTile(peerId) {
+  const tile = document.createElement('div');
+  tile.className = 'camtile';
+  tile.innerHTML = `<video autoplay playsinline muted></video>
+                    <div class="fsicon">⛶</div>
+                    <div class="nm"></div>`;
+  tile.title = 'Clique para ver em tela cheia';
+  tile.addEventListener('click', () => telaCheia(tile));
+  return tile;
+}
+
+function renderCamStrip() {
+  const strip = $('camStrip');
+  const comCamera = [...members.entries()].filter(([id, m]) => {
+    if (id === watchTarget) return false;              // essa e a flutuante
+    const s = id === myPeerId ? myCam : camStreams.get(id);
+    return !!s && m.camOn;
+  });
+  const ids = new Set(comCamera.map(([id]) => id));
+
+  camtiles.forEach((el, id) => {
+    if (!ids.has(id)) { el.remove(); camtiles.delete(id); }
+  });
+
+  comCamera.forEach(([id, m]) => {
+    let tile = camtiles.get(id);
+    if (!tile) { tile = buildCamTile(id); camtiles.set(id, tile); }
+    const v = tile.querySelector('video');
+    const s = id === myPeerId ? myCam : camStreams.get(id);
+    if (v.srcObject !== s) v.srcObject = s;
+    v.classList.toggle('self', id === myPeerId);
+    tile.querySelector('.nm').textContent = m.name + (id === myPeerId ? ' (você)' : '');
+    strip.appendChild(tile);   // ja existe: so reordena, nao reinicia o video
+  });
 }
 
 function mountCam(overlay, peerId) {
@@ -1197,12 +1282,46 @@ $('btnFs').addEventListener('click', () => {
 // ============================================================
 // Diagnóstico
 // ============================================================
+// O painel abre JA com as opcoes visiveis; o teste preenche o diagnostico
+// depois. Antes tudo so aparecia apos 8s e a opcao passava despercebida.
+function blocoOpcoesDiag() {
+  return `
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2f3136">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" id="chkRelay" ${forcarRelay() ? 'checked' : ''} style="margin-top:3px">
+        <span>
+          <b>Forçar retransmissão</b> — desvia minhas conexões pelo servidor de retransmissão
+          em vez de irem direto.
+          <div style="color:#9aa0a6;margin-top:4px">
+            Só ajuda se a sua imagem travar <b>com perda de pacotes</b>. Normalmente o caminho
+            direto é melhor. Isto <b>não</b> aumenta a internet de quem transmite.
+            Quem precisa ligar é <b>quem transmite</b>. A página recarrega ao mudar.
+          </div>
+        </span>
+      </label>
+    </div>
+    <button class="ghost" style="margin-top:10px;padding:4px 10px;font-size:.75rem" id="btnFecharDiag">Fechar</button>`;
+}
+
+function ligarOpcoesDiag() {
+  const chk = $('chkRelay');
+  if (chk) chk.addEventListener('change', e => {
+    localStorage.setItem('botTelaForcarRelay', e.target.checked ? '1' : '0');
+    location.reload();
+  });
+  const btn = $('btnFecharDiag');
+  if (btn) btn.addEventListener('click', () => $('diagPanel').classList.remove('on'));
+}
+
 $('btnDiag').addEventListener('click', async () => {
   const p = $('diagPanel');
   if (p.classList.contains('on')) { p.classList.remove('on'); return; }
   p.classList.add('on');
-  p.innerHTML = '<span style="color:#9aa0a6">Testando a conexão (uns 8 segundos)...</span>';
+  p.innerHTML = '<span style="color:#9aa0a6">Testando a conexão (uns 8 segundos)...</span>'
+              + blocoOpcoesDiag();
+  ligarOpcoesDiag();
   const r = await testarConexao();
+  if (!p.classList.contains('on')) return;   // fecharam durante o teste
   const ok = c => `<span style="color:#3ba55c">✔</span> ${c}`;
   const bad = c => `<span style="color:#da373c">✖</span> ${c}`;
   const warn = c => `<span style="color:#f0b232">⚠</span> ${c}`;
@@ -1217,29 +1336,8 @@ $('btnDiag').addEventListener('click', async () => {
   } else {
     linhas.push(bad('TURN configurado mas sem resposta — credenciais expiradas ou servidor fora.'));
   }
-  const marcado = forcarRelay() ? 'checked' : '';
-  p.innerHTML = linhas.join('<br>') + `
-    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2f3136">
-      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
-        <input type="checkbox" id="chkRelay" ${marcado} style="margin-top:3px">
-        <span>
-          <b>Forçar retransmissão</b> — desvia minhas conexões pelo servidor de retransmissão
-          em vez de irem direto.
-          <div style="color:#9aa0a6;margin-top:4px">
-            Só tente isto se a sua imagem estiver travando <b>com perda de pacotes</b>.
-            Normalmente o caminho direto é melhor: retransmitir adiciona atraso.
-            Isto <b>não</b> aumenta a internet de quem transmite. A página recarrega ao mudar.
-          </div>
-        </span>
-      </label>
-    </div>
-    <button class="ghost" style="margin-top:10px;padding:4px 10px;font-size:.75rem" id="btnFecharDiag">Fechar</button>`;
-
-  $('chkRelay').addEventListener('change', e => {
-    localStorage.setItem('botTelaForcarRelay', e.target.checked ? '1' : '0');
-    location.reload();   // a politica de rede so vale ao criar a conexao
-  });
-  $('btnFecharDiag').addEventListener('click', () => p.classList.remove('on'));
+  p.innerHTML = linhas.join('<br>') + blocoOpcoesDiag();
+  ligarOpcoesDiag();
 });
 
 // ============================================================
@@ -1356,6 +1454,7 @@ function renderWatch() {
   $('btnBack').textContent = '← Voltar para ' + destino;
 
   mountCam($('watchCam'), watchTarget);
+  renderCamStrip();
   const camDisponivel = !!(watchTarget === myPeerId ? myCam : camStreams.get(watchTarget)) && m.camOn;
   $('btnShowCam').style.display = (camDisponivel && camPref.hidden) ? '' : 'none';
 
