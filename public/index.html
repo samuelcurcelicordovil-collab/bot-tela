@@ -113,7 +113,7 @@
   .ptile.live:hover .watchbtn { background: #2d8049; }
 
   /* ---------- ASSISTINDO ---------- */
-  #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
+  #watchView { display: none; flex-direction: column; min-height: 100%; gap: 10px; }
   .watchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .watchbar .who { font-weight: 600; }
   .live-badge { background: #da373c; border-radius: 4px; padding: 2px 7px;
@@ -128,9 +128,21 @@
   }
   .stats.ruim { color: #f0b232; border-color: #6b5417; }
   .stats.relay { color: #f0b232; }
-  .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
+  .videoframe { flex: 0 0 auto; height: var(--alturaVideo, 60vh); min-height: 140px;
+                background: #000; border-radius: 12px;
                 overflow: hidden; position: relative; border: 1px solid #2f3136; }
   .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .videoframe:fullscreen { height: 100%; }
+  .alturactl { display: flex; align-items: center; gap: 4px; }
+  .alturactl button {
+    width: 26px; height: 26px; padding: 0; font-size: .95rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center; background: #2b2d31;
+  }
+  .alturactl button:hover:not(:disabled) { background: #3a3d43; }
+  .alturactl .val {
+    font-family: ui-monospace, Consolas, monospace; font-size: .72rem;
+    color: #9aa0a6; min-width: 34px; text-align: center;
+  }
   .framemsg {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: center; gap: 10px; text-align: center;
@@ -278,6 +290,11 @@
         <span id="statsBadge" class="stats"></span>
         <button class="ghost" id="btnShowCam" style="display:none">📹 Mostrar câmera</button>
         <button class="ghost" id="btnMute">🔊 Som ligado</button>
+        <span class="alturactl" title="Altura da tela transmitida">
+          <button class="ghost" id="btnMenor">−</button>
+          <span class="val" id="alturaVal"></span>
+          <button class="ghost" id="btnMaior">+</button>
+        </span>
         <button class="ghost" id="btnFs">⛶ Tela cheia</button>
       </div>
       <div class="switchrow" id="switchRow"></div>
@@ -1330,6 +1347,42 @@ function iniciarEstatisticas() {
   }, 2000);
 }
 iniciarEstatisticas();
+
+// ============================================================
+// Altura da tela transmitida
+// Preferencia sua, guardada no navegador. Nao afeta ninguem mais.
+// ============================================================
+const ALTURA_MIN = 25, ALTURA_MAX = 90, ALTURA_PASSO = 5;
+let alturaVideo = Number(localStorage.getItem('botTelaAltura')) || 60;
+
+function aplicarAltura() {
+  alturaVideo = Math.max(ALTURA_MIN, Math.min(ALTURA_MAX, alturaVideo));
+  document.documentElement.style.setProperty('--alturaVideo', alturaVideo + 'vh');
+  const val = $('alturaVal');
+  if (val) val.textContent = alturaVideo + '%';
+  const menor = $('btnMenor'), maior = $('btnMaior');
+  if (menor) menor.disabled = alturaVideo <= ALTURA_MIN;
+  if (maior) maior.disabled = alturaVideo >= ALTURA_MAX;
+  localStorage.setItem('botTelaAltura', String(alturaVideo));
+}
+
+function mudarAltura(delta) {
+  alturaVideo += delta;
+  aplicarAltura();
+}
+
+$('btnMenor').addEventListener('click', () => mudarAltura(-ALTURA_PASSO));
+$('btnMaior').addEventListener('click', () => mudarAltura(ALTURA_PASSO));
+
+// Atalhos: + e - enquanto assiste (fora de campos de texto)
+document.addEventListener('keydown', e => {
+  if (mode !== 'watch' || document.fullscreenElement) return;
+  if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
+  if (e.key === '+' || e.key === '=') { mudarAltura(ALTURA_PASSO); e.preventDefault(); }
+  if (e.key === '-' || e.key === '_') { mudarAltura(-ALTURA_PASSO); e.preventDefault(); }
+});
+
+aplicarAltura();
 
 // ============================================================
 // Som e tela cheia
