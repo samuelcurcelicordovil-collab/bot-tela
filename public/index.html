@@ -316,6 +316,18 @@
   </div>
 </div>
 
+<!-- ================= SENHA ================= -->
+<div class="backdrop" id="senhaBackdrop">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <img src="lol2.png" alt="LOL 2" class="lol2 big" onerror="this.classList.add('missing')">
+    <h3>Sala do LOL 2</h3>
+    <p class="lead">Este site é fechado. Digite a senha para entrar.</p>
+    <input type="password" id="senhaInput" placeholder="Senha" autocomplete="current-password">
+    <div class="actions"><button id="btnSenha">Entrar</button></div>
+    <div class="status" id="senhaStatus"></div>
+  </div>
+</div>
+
 <!-- ================= NOME (só na primeira vez) ================= -->
 <div class="backdrop" id="nameBackdrop">
   <div class="modal" style="max-width:380px;text-align:center">
@@ -392,9 +404,11 @@
 let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 let TURN_ATIVO = false;
 
+let token = localStorage.getItem('botTelaToken') || '';
+
 async function loadIce() {
   try {
-    const cfg = await (await fetch('/api/ice', { cache: 'no-store' })).json();
+    const cfg = await (await fetch('/api/ice?t=' + encodeURIComponent(token), { cache: 'no-store' })).json();
     if (cfg.iceServers && cfg.iceServers.length) ICE_SERVERS = cfg.iceServers;
     TURN_ATIVO = !!cfg.turn;
   } catch (e) {
@@ -474,7 +488,15 @@ const $ = id => document.getElementById(id);
 // ============================================================
 // Entrada: nome uma vez, depois direto pra sala
 // ============================================================
-function start() {
+async function start() {
+  // Se o site exige senha e ainda nao temos um passe valido, pede primeiro.
+  let precisa = false;
+  try { precisa = (await (await fetch('/api/precisa-senha')).json()).precisa; } catch {}
+  if (precisa && !token) {
+    $('senhaBackdrop').classList.add('open');
+    $('senhaInput').focus();
+    return;
+  }
   if (!myName) {
     $('nameBackdrop').classList.add('open');
     $('nameInput').focus();
@@ -482,6 +504,43 @@ function start() {
   }
   boot();
 }
+
+async function enviarSenha() {
+  const senha = $('senhaInput').value;
+  if (!senha) return;
+  const st = $('senhaStatus');
+  $('btnSenha').disabled = true;
+  st.className = 'status';
+  st.textContent = 'Verificando...';
+  try {
+    const r = await fetch('/api/entrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senha })
+    });
+    if (r.status === 429) {
+      st.className = 'status err';
+      st.textContent = 'Muitas tentativas. Espere 5 minutos.';
+    } else if (!r.ok) {
+      st.className = 'status err';
+      st.textContent = 'Senha incorreta.';
+      $('senhaInput').value = '';
+    } else {
+      const j = await r.json();
+      token = j.token;
+      localStorage.setItem('botTelaToken', token);
+      $('senhaBackdrop').classList.remove('open');
+      start();
+      return;
+    }
+  } catch (e) {
+    st.className = 'status err';
+    st.textContent = 'Não consegui falar com o servidor.';
+  }
+  $('btnSenha').disabled = false;
+}
+$('btnSenha').addEventListener('click', enviarSenha);
+$('senhaInput').addEventListener('keydown', e => { if (e.key === 'Enter') enviarSenha(); });
 
 $('btnEnter').addEventListener('click', () => {
   const n = $('nameInput').value.trim();
@@ -589,7 +648,7 @@ function connectWS() {
     setDot('ok');
     // Informa o estado ATUAL: numa reconexao, posso ja estar transmitindo.
     ws.send(JSON.stringify({
-      type: 'join', room: ROOM, name: myName, peerId: myPeerId,
+      type: 'join', room: ROOM, name: myName, peerId: myPeerId, token,
       broadcasting: !!myStream, camOn: !!myCam
     }));
     // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
@@ -613,6 +672,13 @@ function connectWS() {
 
 function handleMsg(msg) {
   if (msg.type === 'pong') return;
+
+  // O servidor recusou o token (senha trocada ou prazo vencido).
+  if (msg.type === 'auth-fail') {
+    localStorage.removeItem('botTelaToken');
+    location.reload();
+    return;
+  }
 
   if (msg.type === 'join-ok') {
     members.clear();

@@ -7,8 +7,76 @@ const { ExpressPeerServer } = require('peer');
 const { WebSocketServer } = require('ws');
 
 const app = express();
+app.use(express.json({ limit: '4kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/signaling', (req, res) => res.json({ selfHosted: true }));
+
+// ============================================================
+// Senha de entrada
+//
+// A verificacao e feita AQUI, no servidor. Senha conferida so no navegador
+// nao protege nada: qualquer um abre o console e passa por cima.
+//
+// A senha vem da variavel de ambiente ROOM_PASSWORD (no servidor hospedado)
+// ou do arquivo senha.txt (na sua maquina). Nenhum dos dois vai pro Git.
+// ============================================================
+function lerSenha() {
+  if (process.env.ROOM_PASSWORD) return process.env.ROOM_PASSWORD.trim();
+  try { return fs.readFileSync(path.join(__dirname, 'senha.txt'), 'utf8').trim() || null; }
+  catch { return null; }
+}
+const SENHA = lerSenha();
+
+// A chave do token deriva da propria senha, entao reiniciar o servidor nao
+// desloga ninguem — e trocar a senha invalida todos os acessos de uma vez.
+const chaveToken = () => crypto.createHash('sha256').update(SENHA || 'aberto').digest();
+
+function criarToken(dias = 14) {
+  const exp = Date.now() + dias * 86400000;
+  const sig = crypto.createHmac('sha256', chaveToken()).update(String(exp)).digest('base64url');
+  return exp + '.' + sig;
+}
+
+function comparaSeguro(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+function tokenValido(t) {
+  if (!SENHA) return true;                  // sem senha configurada: site aberto
+  if (typeof t !== 'string' || !t.includes('.')) return false;
+  const [exp, sig] = t.split('.');
+  if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return false;
+  return comparaSeguro(sig, crypto.createHmac('sha256', chaveToken()).update(exp).digest('base64url'));
+}
+
+// Freio contra tentativa de adivinhar a senha na forca bruta.
+const tentativas = new Map();
+function podeTentar(ip) {
+  const agora = Date.now();
+    const t = tentativas.get(ip) || { n: 0, ate: 0 };
+  if (t.ate > agora) return false;
+  if (agora - (t.ultima || 0) > 10 * 60000) t.n = 0;   // esfria após 10 min
+  t.ultima = agora;
+  t.n++;
+  if (t.n > 8) { t.ate = agora + 5 * 60000; t.n = 0; } // 8 erros = 5 min travado
+  tentativas.set(ip, t);
+  return t.ate <= agora;
+}
+
+app.get('/api/precisa-senha', (req, res) => res.json({ precisa: !!SENHA }));
+
+app.post('/api/entrar', (req, res) => {
+  if (!SENHA) return res.json({ ok: true, token: criarToken() });
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '?';
+  if (!podeTentar(String(ip))) {
+    return res.status(429).json({ ok: false, motivo: 'muitas tentativas' });
+  }
+  const enviada = String((req.body || {}).senha || '');
+  if (!comparaSeguro(enviada, SENHA)) return res.status(401).json({ ok: false });
+  tentativas.delete(String(ip));
+  res.json({ ok: true, token: criarToken() });
+});
 
 // ============================================================
 // Servidores de conexao (STUN/TURN)
@@ -98,6 +166,8 @@ async function buildIceServers() {
 }
 
 app.get('/api/ice', async (req, res) => {
+  // Sem isto, as credenciais do TURN ficariam publicas para qualquer um.
+  if (!tokenValido(req.query.t)) return res.status(401).json({ erro: 'sem autorizacao' });
   try {
     res.json(await buildIceServers());
   } catch (err) {
@@ -178,6 +248,10 @@ roomWss.on('connection', (ws) => {
     if (msg.type === 'ping') { sendTo(ws, { type: 'pong' }); return; }
 
     if (msg.type === 'join') {
+      if (!tokenValido(msg.token)) {
+        sendTo(ws, { type: 'auth-fail' });
+        return ws.close();
+      }
       const code = String(msg.room || '').toUpperCase().trim();
       if (!code || !msg.peerId) return;
 

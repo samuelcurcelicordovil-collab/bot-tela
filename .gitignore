@@ -5,3 +5,6 @@ turn.json
 node_modules/
 npm-debug.log*
 .env
+
+# Senha de entrada — NUNCA subir para o Git
+senha.txt
