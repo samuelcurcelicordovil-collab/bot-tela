@@ -61,7 +61,35 @@
   }
   #diagPanel.on { display: block; }
 
-  #stage { flex: 1; overflow: auto; padding: 18px; }
+  #stage {
+    flex: 1; overflow: auto; padding: 18px; display: grid;
+    grid-template-columns: 240px minmax(0, 1fr); gap: 14px; align-items: start;
+  }
+
+  #peopleView, #watchView, #gridView { grid-column: 2; min-width: 0; }
+
+  /* ---------- CHAT DA SALA ---------- */
+  #chatPanel {
+    grid-column: 1; grid-row: 1; width: 240px; height: min(100%, 620px); min-height: 300px;
+    display: flex; flex-direction: column; background: #232428;
+    border: 1px solid #2f3136; border-radius: 10px; overflow: hidden;
+  }
+  .chathead { padding: 12px 14px; border-bottom: 1px solid #2f3136; font-weight: 700; }
+  .chathead small { display: block; margin-top: 3px; color: #9aa0a6; font-weight: 400; font-size: .75rem; }
+  #chatMessages { flex: 1; overflow-y: auto; padding: 12px; }
+  .chatmsg { margin-bottom: 12px; overflow-wrap: anywhere; }
+  .chatmsg .chatname { color: #77d99a; font-size: .78rem; font-weight: 700; }
+  .chatmsg .chattext { margin-top: 2px; color: #e3e5e8; font-size: .86rem; line-height: 1.35; white-space: pre-wrap; }
+  .chatempty { color: #6a6f76; font-size: .82rem; text-align: center; padding: 20px 8px; }
+  #chatForm { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #2f3136; }
+  #chatInput { min-width: 0; padding: 9px; }
+  #chatForm button { padding: 8px 12px; }
+
+  @media (max-width: 760px) {
+    #stage { display: flex; flex-direction: column; }
+    #peopleView, #watchView, #gridView, #chatPanel { width: 100%; }
+    #chatPanel { order: 4; height: 320px; min-height: 0; }
+  }
 
   /* ---------- TILES DE PESSOAS (estilo Discord) ---------- */
   #peopleView { display: grid; gap: 14px; max-width: 1100px; margin: 0 auto;
@@ -278,6 +306,15 @@
 
   <div id="stage">
     <div id="peopleView"></div>
+
+    <aside id="chatPanel">
+      <div class="chathead">Chat da sala<small>Converse com quem está conectado</small></div>
+      <div id="chatMessages"><div class="chatempty">Nenhuma mensagem ainda.</div></div>
+      <form id="chatForm">
+        <input type="text" id="chatInput" maxlength="500" placeholder="Escreva uma mensagem..." autocomplete="off">
+        <button type="submit" title="Enviar mensagem">Enviar</button>
+      </form>
+    </aside>
 
     <div id="watchView">
       <div class="watchbar">
@@ -565,6 +602,35 @@ $('btnEnter').addEventListener('click', () => {
 });
 $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnEnter').click(); });
 
+function adicionarMensagemChat(msg) {
+  const area = $('chatMessages');
+  const vazio = area.querySelector('.chatempty');
+  if (vazio) vazio.remove();
+
+  const item = document.createElement('div');
+  item.className = 'chatmsg';
+  const nome = document.createElement('div');
+  nome.className = 'chatname';
+  nome.textContent = msg.name || 'Anônimo';
+  const texto = document.createElement('div');
+  texto.className = 'chattext';
+  texto.textContent = msg.text;
+  item.append(nome, texto);
+  area.appendChild(item);
+  while (area.children.length > 100) area.firstElementChild.remove();
+  area.scrollTop = area.scrollHeight;
+}
+
+$('chatForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = $('chatInput');
+  const text = input.value.trim();
+  if (!text || !ws || ws.readyState !== ws.OPEN) return;
+  ws.send(JSON.stringify({ type: 'chat', text }));
+  input.value = '';
+  input.focus();
+});
+
 $('meName').addEventListener('click', () => {
   const n = prompt('Seu nome:', myName);
   if (n && n.trim()) {
@@ -685,6 +751,11 @@ function connectWS() {
 
 function handleMsg(msg) {
   if (msg.type === 'pong') return;
+
+  if (msg.type === 'chat') {
+    adicionarMensagemChat(msg);
+    return;
+  }
 
   // O servidor recusou o token (senha trocada ou prazo vencido).
   if (msg.type === 'auth-fail') {
@@ -960,7 +1031,7 @@ $('btnConfirmShare').addEventListener('click', async () => {
 
     const display = await navigator.mediaDevices.getDisplayMedia({
       video,
-      audio: choice === 'display'
+      audio: choice === 'display' ? {} : false
     });
 
     // Reforco: o Chrome as vezes entrega a tela em resolucao nativa mesmo
@@ -982,7 +1053,13 @@ $('btnConfirmShare').addEventListener('click', async () => {
     display.getVideoTracks().forEach(t => myStream.addTrack(t));
 
     const audioTracks = [];
-    if (choice === 'display') display.getAudioTracks().forEach(t => audioTracks.push(t));
+    if (choice === 'display') {
+      display.getAudioTracks().forEach(t => audioTracks.push(t));
+      if (!audioTracks.length) {
+        $('audNote').className = 'note warn';
+        $('audNote').textContent = 'O navegador não capturou o áudio. Pare e tente novamente marcando "Compartilhar áudio" na janela de seleção.';
+      }
+    }
     if (choice === 'device') {
       const id = $('deviceSelect').value;
       const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } } });
@@ -993,6 +1070,7 @@ $('btnConfirmShare').addEventListener('click', async () => {
       mic.getAudioTracks().forEach(t => audioTracks.push(t));
     }
     const mixed = mixToOneTrack(audioTracks);
+    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
     if (mixed) myStream.addTrack(mixed);
 
     display.getVideoTracks()[0].addEventListener('ended', stopShare);
@@ -1542,7 +1620,8 @@ function renderPeople() {
     let tile = ptiles.get(id);
     if (!tile) { tile = buildPersonTile(id); ptiles.set(id, tile); }
 
-    const cam = id === myPeerId ? myCam : camStreams.get(id);
+    const cam = id === myPeerId && myStream ? myStream
+      : id === myPeerId ? myCam : camStreams.get(id);
     const v = tile.querySelector('video');
     tile.classList.toggle('hascam', !!cam);
     v.classList.toggle('self', id === myPeerId);

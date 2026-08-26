@@ -247,6 +247,15 @@ roomWss.on('connection', (ws) => {
     // era uma das causas de "a conexao com o servidor caiu".
     if (msg.type === 'ping') { sendTo(ws, { type: 'pong' }); return; }
 
+    if (msg.type === 'chat' && myRoom) {
+      const room = rooms.get(myRoom);
+      const text = String(msg.text || '').trim().slice(0, 500);
+      if (room && text) {
+        broadcast(room, { type: 'chat', peerId: myId, name: room.get(myId)?.name || 'Anônimo', text });
+      }
+      return;
+    }
+
     if (msg.type === 'join') {
       if (!tokenValido(msg.token)) {
         sendTo(ws, { type: 'auth-fail' });
