@@ -67,6 +67,15 @@ function podeTentar(ip) {
 
 app.get('/api/precisa-senha', (req, res) => res.json({ precisa: !!SENHA }));
 
+// Contagem publica de "quanta gente esta online agora" (todas as salas
+// somadas) — so o numero, sem nome de sala nem quem esta nela. Usado na
+// tela de entrada, antes de logar.
+app.get('/api/stats', (req, res) => {
+  let online = 0;
+  rooms.forEach(room => { online += room.size; });
+  res.json({ online });
+});
+
 app.post('/api/entrar', (req, res) => {
   if (!SENHA) return res.json({ ok: true, token: criarToken() });
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '?';

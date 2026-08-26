@@ -26,6 +26,12 @@
     background: #1a1b1e; color: #e3e5e8; font-size: .95rem; font-family: inherit; width: 100%;
   }
 
+  /* ---------- POEIRA DE ESTRELAS (Sparkles) — atras de tudo, na tela toda ---------- */
+  #sparkles {
+    position: fixed; inset: 0; z-index: -2;
+    width: 100%; height: 100%; pointer-events: none;
+  }
+
   /* ---------- MAPA-MUNDI PONTILHADO NO FUNDO (atras do quadro de letras) ---------- */
   /* Um ponto colorido por pessoa da sala, pela localizacao aproximada (IP). */
   #worldMap {
@@ -184,14 +190,14 @@
 
   /* ---------- BRILHO NA BORDA (segue o mouse, tipo Aceternity) ---------- */
   /* --glow-opacity/--glow-angle sao escritos via JS (efeitoGlow mais abaixo). */
-  .ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button {
+  .ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button, .modal {
     --glow-opacity: 0;
     --glow-angle: 0deg;
     box-shadow: 0 0 24px 2px rgba(88, 101, 242, calc(var(--glow-opacity, 0) * .5));
     transition: box-shadow .2s ease;
   }
   .ptile::before, .camtile::before, .gtile::before, #chatPanel::before,
-  #controls::before, .ctl button::before {
+  #controls::before, .ctl button::before, .modal::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -337,13 +343,35 @@
   .ctl .lbl { font-size: .68rem; color: #9aa0a6; }
 
   /* ---------- MODAIS ---------- */
-  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: none;
-              align-items: center; justify-content: center; padding: 20px; z-index: 50; }
-  .backdrop.open { display: flex; }
-  .modal { background: #232428; border-radius: 12px; padding: 24px; width: 100%;
+  /* opacity em vez de display:none — da pra fazer fade na troca entre telas. */
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex;
+              align-items: center; justify-content: center; padding: 20px; z-index: 50;
+              opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+  .backdrop.open { opacity: 1; pointer-events: auto; }
+  .modal { position: relative; background: #232428; border-radius: 12px; padding: 24px; width: 100%;
            max-width: 480px; max-height: 90vh; overflow: auto; }
   .modal h3 { margin: 0 0 4px; font-size: 1.15rem; }
   .modal .lead { color: #9aa0a6; font-size: .86rem; margin: 0 0 20px; }
+
+  /* ---------- PORTAL DE ENTRADA (clique na tela pra comecar) ---------- */
+  #entrarBackdrop { cursor: pointer; background: rgba(0,0,0,.55); }
+  .entrar-conteudo { text-align: center; transform: translateY(-10vh); }
+  .entrar-nome {
+    width: min(72vw, 340px); margin: 0 auto;
+    /* PNG com fundo removido de verdade (recorte por transparencia).
+       So inverte as cores: a arte e preta, aqui fica branca. */
+    filter: invert(1) drop-shadow(0 0 16px rgba(88, 101, 242, .5));
+  }
+  .entrar-nome img { display: block; width: 100%; height: auto; }
+  .entrar-tagline {
+    margin-top: 14px; font-size: .84rem; color: #9aa0a6; letter-spacing: .5px;
+    min-height: 1.2em;
+  }
+  .entrar-credito {
+    position: absolute; left: 0; right: 0; bottom: 26px; text-align: center;
+    font-size: .78rem; letter-spacing: .5px; color: #6a6f76;
+  }
+
   .opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px;
          border: 1px solid #3f4147; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
   .opt:hover { border-color: #5865f2; }
@@ -364,6 +392,7 @@
 </head>
 <body>
 
+<canvas id="sparkles" aria-hidden="true"></canvas>
 <img id="worldMap" alt="" aria-hidden="true">
 <div id="flipBg" aria-hidden="true"></div>
 
@@ -455,6 +484,16 @@
   </div>
 </div>
 
+<!-- ================= PORTAL DE ENTRADA (clique pra comecar) ================= -->
+<div class="backdrop open" id="entrarBackdrop">
+  <div class="entrar-conteudo">
+    <img src="lol2.png" alt="LOL 2" class="lol2 big" onerror="this.classList.add('missing')">
+    <div class="entrar-nome"><img src="lol2-logo.png" alt="LOL 2"></div>
+    <div class="entrar-tagline" id="entrarTagline"></div>
+  </div>
+  <div class="entrar-credito">By Iago Serafim and Samuel Cordovil</div>
+</div>
+
 <!-- ================= SENHA ================= -->
 <div class="backdrop" id="senhaBackdrop">
   <div class="modal" style="max-width:380px;text-align:center">
@@ -480,14 +519,13 @@
 
 <!-- ================= SALA (grupos diferentes nao se atrapalham) ================= -->
 <div class="backdrop" id="salaBackdrop">
-  <div class="modal" style="max-width:380px;text-align:center">
-    <img src="lol2.png" alt="LOL 2" class="lol2 big" onerror="this.classList.add('missing')">
+  <div class="modal" style="max-width:340px;text-align:center">
     <h3>Escolha uma sala</h3>
-    <p class="lead">Cada sala é isolada: só quem tem o código entra e vê quem está nela. Crie uma sala nova ou entre com o código de quem te chamou.</p>
-    <input type="text" id="salaInput" placeholder="Código da sala" maxlength="10" autocomplete="off" style="text-transform:uppercase;text-align:center;letter-spacing:2px;font-weight:700">
+    <p class="lead">Crie uma sala nova ou entre com um código.</p>
+    <input type="text" id="salaInput" placeholder="Código da sala" maxlength="10" autocomplete="off" style="text-transform:uppercase;text-align:center;letter-spacing:3px;font-weight:700">
     <div class="actions">
-      <button class="ghost" id="btnCriarSala">🎲 Gerar código novo</button>
-      <button id="btnEntrarSala">Entrar na sala</button>
+      <button class="ghost" id="btnCriarSala">Novo código</button>
+      <button id="btnEntrarSala">Entrar</button>
     </div>
     <div class="status" id="salaStatus"></div>
   </div>
@@ -644,6 +682,14 @@ async function testarConexao() {
 // sem um ver a transmissao/camera/chat do outro. Definida em start(),
 // antes de boot() acontecer.
 let ROOM = null;
+
+// A poeira de estrelas (Sparkles) e so pra tela de entrada (senha/nome/sala) —
+// some assim que a sala carrega, pra nao competir com a interface principal.
+let mostrarSparkles = true;
+
+// So no portal de entrada (o clique inicial) o letreiro mostra as frases de
+// brincadeira em vez de LOL2/sala/creditos.
+let naTelaEntrar = true;
 
 const CODIGO_SALA_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sem O/0 e I/1, pra nao confundir
 function gerarCodigoSala() {
@@ -886,6 +932,7 @@ $('meName').addEventListener('click', () => {
 });
 
 async function boot() {
+  mostrarSparkles = false;
   $('app').style.display = 'flex';
   $('meName').textContent = myName;
   $('roomBadge').textContent = '🔑 ' + ROOM;
@@ -1328,7 +1375,6 @@ $('btnConfirmShare').addEventListener('click', async () => {
 
     members.get(myPeerId).broadcasting = true;
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: true }));
-    iniciarDeteccaoMovimento();
     watchers.forEach(id => callPeer(id));
     render();
   } catch (err) {
@@ -1359,7 +1405,8 @@ async function priorizarFluidez(call, tentativa = 0) {
   try {
     const p = sender.getParameters();
     if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-    p.encodings[0].maxBitrate = perfilAtual === 'baixo' ? BITRATE_PARADO : BITRATE_MOVIMENTO;
+    // Teto fixo e alto: fica nitido em 720p o tempo todo, parado ou nao.
+    p.encodings[0].maxBitrate = BITRATE_720P;
     p.degradationPreference = 'maintain-framerate';
     await sender.setParameters(p);
   } catch (e) {
@@ -1367,85 +1414,7 @@ async function priorizarFluidez(call, tentativa = 0) {
   }
 }
 
-// ============================================================
-// Qualidade adaptativa por movimento — a tela parada (menu, tela de
-// carregamento, so parado no lugar) nao precisa do mesmo tanto de internet
-// que uma cena cheia de acao. Compara amostras pequenas do video a cada
-// segundo; se quase nada mudou, aperta o teto de bitrate ate o movimento
-// voltar. O teto em si (720p) nao muda, so quantos bits o codificador pode
-// usar por segundo.
-// ============================================================
-const BITRATE_MOVIMENTO = 2_500_000; // ~2.5 Mbps: nitido em 720p com acao
-const BITRATE_PARADO = 400_000;      // ~0.4 Mbps: de sobra pra tela parada
-const LIMIAR_MOVIMENTO = 6;          // diferenca media (0-255) pra contar como "mexendo"
-let perfilAtual = 'movimento';
-let motionVideo = null, motionCanvas = null, motionCtx = null, motionTimer = null;
-let frameAnteriorMotion = null;
-
-function iniciarDeteccaoMovimento() {
-  pararDeteccaoMovimento();
-  if (!myStream) return;
-
-  motionVideo = document.createElement('video');
-  motionVideo.muted = true;
-  motionVideo.playsInline = true;
-  motionVideo.srcObject = myStream;
-  motionVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px';
-  document.body.appendChild(motionVideo);
-  motionVideo.play().catch(() => {});
-
-  motionCanvas = document.createElement('canvas');
-  motionCanvas.width = 64;
-  motionCanvas.height = 36;
-  motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
-  frameAnteriorMotion = null;
-  perfilAtual = 'movimento';
-
-  motionTimer = setInterval(medirMovimento, 1000);
-}
-
-function pararDeteccaoMovimento() {
-  if (motionTimer) { clearInterval(motionTimer); motionTimer = null; }
-  if (motionVideo) { motionVideo.remove(); motionVideo = null; }
-  motionCanvas = null;
-  motionCtx = null;
-  frameAnteriorMotion = null;
-  perfilAtual = 'movimento';
-}
-
-function medirMovimento() {
-  if (!motionVideo || motionVideo.readyState < 2) return;
-  motionCtx.drawImage(motionVideo, 0, 0, motionCanvas.width, motionCanvas.height);
-  const atual = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
-
-  if (frameAnteriorMotion) {
-    let diff = 0;
-    for (let i = 0; i < atual.length; i += 4) diff += Math.abs(atual[i] - frameAnteriorMotion[i]);
-    const media = diff / (atual.length / 4);
-    aplicarPerfilQualidade(media > LIMIAR_MOVIMENTO ? 'movimento' : 'baixo');
-  }
-  frameAnteriorMotion = atual;
-}
-
-async function aplicarPerfilQualidade(perfil) {
-  if (perfil === perfilAtual) return;
-  perfilAtual = perfil;
-  const maxBitrate = perfil === 'baixo' ? BITRATE_PARADO : BITRATE_MOVIMENTO;
-  for (const call of outgoing.values()) {
-    const pc = call.peerConnection;
-    if (!pc) continue;
-    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-    if (!sender) continue;
-    try {
-      const p = sender.getParameters();
-      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-      p.encodings[0].maxBitrate = maxBitrate;
-      await sender.setParameters(p);
-    } catch (e) {
-      console.warn('nao consegui ajustar qualidade:', e.message);
-    }
-  }
-}
+const BITRATE_720P = 2_500_000; // ~2.5 Mbps: nitido em 720p, sempre no teto
 
 function callPeerCam(peerId) {
   if (peerId === myPeerId || !myCam) return;
@@ -1463,7 +1432,6 @@ function closeOutgoing(peerId) {
 
 function stopShare() {
   if (!myStream) return;
-  pararDeteccaoMovimento();
   outgoing.forEach(c => c.close());
   outgoing.clear();
   myStream.getTracks().forEach(t => t.stop());
@@ -2173,6 +2141,61 @@ function renderGrid() {
 }
 
 // ============================================================
+// Poeira de estrelas no fundo (Sparkles), atras de tudo, na tela toda.
+// Canvas simples: cada particula deriva bem devagar e pisca com um seno.
+// Pausa quando a aba fica escondida pra nao gastar CPU a toa.
+// ============================================================
+(function iniciarSparkles() {
+  const canvas = document.getElementById('sparkles');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let particulas = [], largura = 0, altura = 0, t = 0;
+
+  function criarParticula() {
+    return {
+      x: Math.random() * largura,
+      y: Math.random() * altura,
+      r: Math.random() * 1.3 + 0.4,
+      vx: (Math.random() - 0.5) * 0.06,
+      vy: (Math.random() - 0.5) * 0.06,
+      fase: Math.random() * Math.PI * 2,
+      veloc: 0.5 + Math.random() * 0.7
+    };
+  }
+
+  function redimensionar() {
+    largura = canvas.width = window.innerWidth;
+    altura = canvas.height = window.innerHeight;
+    const qtd = Math.min(160, Math.round((largura * altura) / 11000));
+    particulas = Array.from({ length: qtd }, criarParticula);
+  }
+
+  function desenhar() {
+    if (!document.hidden) {
+      ctx.clearRect(0, 0, largura, altura);
+      if (mostrarSparkles) {
+        t += 0.016;
+        particulas.forEach(p => {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0) p.x = largura; else if (p.x > largura) p.x = 0;
+          if (p.y < 0) p.y = altura; else if (p.y > altura) p.y = 0;
+          const brilho = 0.2 + 0.7 * (0.5 + 0.5 * Math.sin(t * p.veloc + p.fase));
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(180, 190, 255, ${brilho.toFixed(2)})`;
+          ctx.fill();
+        });
+      }
+    }
+    requestAnimationFrame(desenhar);
+  }
+
+  window.addEventListener('resize', redimensionar);
+  redimensionar();
+  desenhar();
+})();
+
+// ============================================================
 // Brilho na borda dos cards seguindo o mouse (tipo Aceternity/Cursor).
 // So mexe em cards visiveis no momento — perto de nada, sao poucos.
 // ============================================================
@@ -2181,7 +2204,7 @@ function renderGrid() {
   let pendente = false, ultimoX = -9999, ultimoY = -9999;
 
   function atualizarGlow(x, y) {
-    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button').forEach(card => {
+    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button, .modal').forEach(card => {
       const r = card.getBoundingClientRect();
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const foraDaBorda = Math.hypot(x - cx, y - cy) - Math.max(r.width, r.height) / 2;
@@ -2253,8 +2276,11 @@ function renderGrid() {
     tiles.forEach((tile, i) => flipTileTo(tile, alvo[i], i * 22));
   }
 
+  const FRASES_ENTRADA = ['SITE CONTRA A GANJA', 'VAI SE FUDER GANJA'];
   // ROOM ainda pode estar vazio (usuario nao escolheu sala): ignora ate existir.
-  const frases = () => ['LOL2', ROOM, 'IAGO SERAFIM E SAMUEL CORDOVIL'].filter(Boolean);
+  const frases = () => naTelaEntrar
+    ? FRASES_ENTRADA
+    : ['LOL2', ROOM, 'IAGO SERAFIM E SAMUEL CORDOVIL'].filter(Boolean);
   let indice = 0;
   function proximaFrase() {
     const lista = frases();
@@ -2265,7 +2291,25 @@ function renderGrid() {
   setInterval(proximaFrase, 4200);
 })();
 
-start();
+// Quantas pessoas estao online agora, pra tagline da tela de entrada.
+(async function carregarStatsEntrada() {
+  const el = $('entrarTagline');
+  if (!el) return;
+  try {
+    const j = await (await fetch('/api/stats')).json();
+    const n = j.online || 0;
+    el.textContent = n === 0 ? 'Ninguém online agora'
+      : n === 1 ? '1 pessoa online agora'
+      : `${n} pessoas online agora`;
+  } catch { /* sem internet ainda: deixa a tagline vazia mesmo */ }
+})();
+
+// Portal de entrada: so comeca a checar senha/nome/sala depois do clique.
+$('entrarBackdrop').addEventListener('click', () => {
+  naTelaEntrar = false;
+  $('entrarBackdrop').classList.remove('open');
+  start();
+});
 </script>
 
 </body>
