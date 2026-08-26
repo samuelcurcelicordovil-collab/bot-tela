@@ -26,8 +26,37 @@
     background: #1a1b1e; color: #e3e5e8; font-size: .95rem; font-family: inherit; width: 100%;
   }
 
+  /* ---------- MAPA-MUNDI PONTILHADO NO FUNDO (atras do quadro de letras) ---------- */
+  /* Um ponto colorido por pessoa da sala, pela localizacao aproximada (IP). */
+  #worldMap {
+    position: fixed; inset: 0; z-index: -1;
+    width: 100%; height: 100%; object-fit: contain;
+    opacity: .22; pointer-events: none;
+  }
+
+  /* ---------- QUADRO DE LETRAS GIRATORIAS NO FUNDO (estilo aeroporto) ---------- */
+  /* Decorativo, atras de tudo: aparece so nos vaos entre os paineis. */
+  #flipBg {
+    position: fixed; inset: 0; z-index: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; overflow: hidden; padding: 20px;
+  }
+  .flipboard { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 94vw; }
+  .fliptile { position: relative; width: clamp(13px, 3vw, 24px); height: clamp(19px, 4.3vw, 34px); perspective: 220px; }
+  .flipchar {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #232428; border-radius: 3px; color: #3f4a6b;
+    font-family: ui-monospace, Consolas, monospace; font-weight: 700;
+    font-size: clamp(10px, 2.2vw, 18px); backface-visibility: hidden;
+  }
+  .flipchar.back { transform: rotateX(180deg); }
+  .fliptile.flip .flipchar.front { animation: flipOutFront .3s ease-in forwards; }
+  .fliptile.flip .flipchar.back { animation: flipInBack .3s ease-in forwards; }
+  @keyframes flipOutFront { to { transform: rotateX(-180deg); } }
+  @keyframes flipInBack { from { transform: rotateX(180deg); } to { transform: rotateX(0deg); } }
+
   /* ---------- APP ---------- */
-  #app { display: none; flex-direction: column; height: 100vh; }
+  #app { position: relative; z-index: 1; display: none; flex-direction: column; height: 100vh; }
 
   .topbar {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -70,6 +99,7 @@
 
   /* ---------- CHAT DA SALA ---------- */
   #chatPanel {
+    position: relative;
     grid-column: 1; grid-row: 1; width: 240px; height: min(100%, 620px); min-height: 300px;
     display: flex; flex-direction: column; background: #232428;
     border: 1px solid #2f3136; border-radius: 10px; overflow: hidden;
@@ -151,6 +181,35 @@
   .ptile.live { cursor: pointer; }
   .ptile.live:hover { border-color: #57d98a; }
   .ptile.live:hover .watchbtn { background: #2d8049; }
+
+  /* ---------- BRILHO NA BORDA (segue o mouse, tipo Aceternity) ---------- */
+  /* --glow-opacity/--glow-angle sao escritos via JS (efeitoGlow mais abaixo). */
+  .ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button {
+    --glow-opacity: 0;
+    --glow-angle: 0deg;
+    box-shadow: 0 0 24px 2px rgba(88, 101, 242, calc(var(--glow-opacity, 0) * .5));
+    transition: box-shadow .2s ease;
+  }
+  .ptile::before, .camtile::before, .gtile::before, #chatPanel::before,
+  #controls::before, .ctl button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: conic-gradient(from var(--glow-angle, 0deg) at 50% 50%,
+      transparent 0deg, transparent 60deg,
+      #8b95ff 95deg, #5865f2 125deg, #6bf0c2 150deg,
+      transparent 190deg, transparent 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: var(--glow-opacity, 0);
+    transition: opacity .2s ease;
+    pointer-events: none;
+  }
 
   /* ---------- ASSISTINDO ---------- */
   #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
@@ -258,15 +317,18 @@
 
   /* ---------- BARRA DE CONTROLES (estilo Discord) ---------- */
   #controls {
+    position: relative;
     flex: none; display: flex; justify-content: center; gap: 18px;
     padding: 12px 0 16px; background: #232428; border-top: 1px solid #2f3136;
   }
   .ctl { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .ctl button {
+    position: relative;
     width: 52px; height: 52px; border-radius: 50%; font-size: 1.3rem;
     background: #3a3d43; display: flex; align-items: center; justify-content: center;
     padding: 0;
   }
+  .ctl button svg { width: 22px; height: 22px; }
   .ctl button:hover { background: #4a4e56; }
   .ctl button.on { background: #3ba55c; }
   .ctl button.on:hover { background: #2d8049; }
@@ -301,6 +363,9 @@
 </style>
 </head>
 <body>
+
+<img id="worldMap" alt="" aria-hidden="true">
+<div id="flipBg" aria-hidden="true"></div>
 
 <!-- ================= APP ================= -->
 <div id="app">
@@ -370,15 +435,21 @@
 
   <div id="controls">
     <div class="ctl">
-      <button id="btnCam" title="Ligar/desligar câmera">📹</button>
+      <button id="btnCam" title="Ligar/desligar câmera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+      </button>
       <span class="lbl">Câmera</span>
     </div>
     <div class="ctl">
-      <button id="btnShare" title="Transmitir sua tela">🖥️</button>
+      <button id="btnShare" title="Transmitir sua tela">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+      </button>
       <span class="lbl" id="shareLbl">Transmitir</span>
     </div>
     <div class="ctl">
-      <button id="btnGrid" title="Ver todas as transmissões" disabled>⊞</button>
+      <button id="btnGrid" title="Ver todas as transmissões" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+      </button>
       <span class="lbl">Ver todas</span>
     </div>
   </div>
@@ -488,6 +559,42 @@ let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 let TURN_ATIVO = false;
 
 let token = localStorage.getItem('botTelaToken') || '';
+
+// ============================================================
+// Localizacao aproximada (por IP, sem pedir GPS) — so pra plotar um ponto
+// no mapa de fundo. Fica em cache na aba pra nao bater na API de novo a
+// cada reconexao. Ninguem manda a posicao exata, so a estimativa da cidade.
+// ============================================================
+let minhaLoc = null;
+// Mapa-mundi com um ponto por pessoa da sala (so decorativo, atras do
+// quadro de letras). Busca de novo, com um respiro, sempre que a lista
+// de gente na sala muda — nao precisa ser em tempo real, e so fundo.
+let atualizarMapaPendente = null;
+function atualizarMapa() {
+  if (!ROOM || !$('worldMap')) return;
+  clearTimeout(atualizarMapaPendente);
+  atualizarMapaPendente = setTimeout(() => {
+    $('worldMap').src = `/api/mapa/${encodeURIComponent(ROOM)}?t=${encodeURIComponent(token)}&_=${Date.now()}`;
+  }, 700);
+}
+
+async function obterLocalizacao() {
+  const salva = sessionStorage.getItem('botTelaLoc');
+  if (salva) {
+    try { minhaLoc = JSON.parse(salva); return minhaLoc; } catch {}
+  }
+  try {
+    const r = await fetch('https://ipapi.co/json/');
+    const j = await r.json();
+    if (typeof j.latitude === 'number' && typeof j.longitude === 'number') {
+      minhaLoc = { lat: j.latitude, lon: j.longitude, city: j.city || '' };
+      sessionStorage.setItem('botTelaLoc', JSON.stringify(minhaLoc));
+    }
+  } catch (e) {
+    console.warn('não consegui estimar localização:', e.message);
+  }
+  return minhaLoc;
+}
 
 async function loadIce() {
   try {
@@ -783,7 +890,7 @@ async function boot() {
   $('meName').textContent = myName;
   $('roomBadge').textContent = '🔑 ' + ROOM;
   $('relayBadge').style.display = forcarRelay() ? '' : 'none';
-  await loadIce();
+  await Promise.all([loadIce(), obterLocalizacao()]);
   initPeer();
 }
 
@@ -868,7 +975,7 @@ function connectWS() {
     // Informa o estado ATUAL: numa reconexao, posso ja estar transmitindo.
     ws.send(JSON.stringify({
       type: 'join', room: ROOM, name: myName, peerId: myPeerId, token,
-      broadcasting: !!myStream, camOn: !!myCam
+      broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc
     }));
     // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
     clearInterval(pingTimer);
@@ -907,10 +1014,10 @@ function handleMsg(msg) {
   if (msg.type === 'join-ok') {
     members.clear();
     msg.members.forEach(m => members.set(m.peerId, {
-      name: m.name, broadcasting: m.broadcasting, camOn: m.camOn
+      name: m.name, broadcasting: m.broadcasting, camOn: m.camOn, loc: m.loc || null
     }));
     members.set(myPeerId, {
-      name: myName, broadcasting: !!myStream, camOn: !!myCam, isMe: true
+      name: myName, broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc, isMe: true
     });
     // Reconexao: descarta midia de quem ja saiu e reassina o que eu olhava.
     [...streams.keys()].forEach(id => { if (!members.has(id)) streams.delete(id); });
@@ -919,22 +1026,26 @@ function handleMsg(msg) {
     syncSubs(desiredSubs());
     // Minha camera vai pra todo mundo que esta na sala.
     if (myCam) members.forEach((_, id) => callPeerCam(id));
+    atualizarMapa();
     render();
   }
 
   if (msg.type === 'member-joined' || msg.type === 'member-updated') {
     members.set(msg.member.peerId, {
-      name: msg.member.name, broadcasting: msg.member.broadcasting, camOn: msg.member.camOn
+      name: msg.member.name, broadcasting: msg.member.broadcasting, camOn: msg.member.camOn,
+      loc: msg.member.loc || null
     });
     if (myCam) callPeerCam(msg.member.peerId);
     // Quem me assistia e reconectou continua na minha lista de watchers;
     // a chamada de tela dele sera refeita quando ele reassinar (watch-request).
+    atualizarMapa();
     render();
   }
 
   if (msg.type === 'member-left') {
     closeOutgoing(msg.peerId);
     watchers.delete(msg.peerId);
+    atualizarMapa();
     members.delete(msg.peerId);
     streams.delete(msg.peerId);
     camStreams.delete(msg.peerId);
@@ -2060,6 +2171,99 @@ function renderGrid() {
     grid.appendChild(d);
   }
 }
+
+// ============================================================
+// Brilho na borda dos cards seguindo o mouse (tipo Aceternity/Cursor).
+// So mexe em cards visiveis no momento — perto de nada, sao poucos.
+// ============================================================
+(function iniciarEfeitoGlow() {
+  const RAIO = 260; // px: distancia a partir da qual o brilho ja sumiu de vez
+  let pendente = false, ultimoX = -9999, ultimoY = -9999;
+
+  function atualizarGlow(x, y) {
+    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button').forEach(card => {
+      const r = card.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const foraDaBorda = Math.hypot(x - cx, y - cy) - Math.max(r.width, r.height) / 2;
+      const perto = Math.max(0, Math.min(1, 1 - foraDaBorda / RAIO));
+      card.style.setProperty('--glow-opacity', perto.toFixed(2));
+      if (perto > 0) {
+        const angulo = Math.atan2(y - cy, x - cx) * 180 / Math.PI + 90;
+        card.style.setProperty('--glow-angle', angulo.toFixed(1) + 'deg');
+      }
+    });
+  }
+
+  document.addEventListener('pointermove', e => {
+    ultimoX = e.clientX; ultimoY = e.clientY;
+    if (pendente) return;
+    pendente = true;
+    requestAnimationFrame(() => { pendente = false; atualizarGlow(ultimoX, ultimoY); });
+  });
+  // Mouse saiu da janela: apaga o brilho em vez de deixar preso.
+  document.addEventListener('pointerleave', () => atualizarGlow(-9999, -9999));
+})();
+
+// ============================================================
+// Quadro de letras giratorias no fundo (estilo painel de aeroporto).
+// So decorativo, atras de tudo. Alterna "LOL2", o codigo da sala atual
+// e o credito de quem fez o site.
+// ============================================================
+(function iniciarFlipBoard() {
+  const COLUNAS = 30;
+  const fundo = document.getElementById('flipBg');
+  if (!fundo) return;
+
+  const linha = document.createElement('div');
+  linha.className = 'flipboard';
+  const tiles = [];
+  for (let i = 0; i < COLUNAS; i++) {
+    const tile = document.createElement('div');
+    tile.className = 'fliptile';
+    tile.innerHTML = '<div class="flipchar front"> </div><div class="flipchar back"> </div>';
+    linha.appendChild(tile);
+    tiles.push(tile);
+  }
+  fundo.appendChild(linha);
+
+  function centralizar(txt) {
+    txt = txt.toUpperCase().slice(0, COLUNAS);
+    const sobra = COLUNAS - txt.length;
+    const esq = Math.floor(sobra / 2);
+    return ' '.repeat(esq) + txt + ' '.repeat(sobra - esq);
+  }
+
+  function flipTileTo(tile, alvo, atraso) {
+    const caractere = alvo === ' ' ? ' ' : alvo;
+    setTimeout(() => {
+      const front = tile.querySelector('.front');
+      if (front.textContent === caractere) return;
+      const back = tile.querySelector('.back');
+      back.textContent = caractere;
+      tile.classList.add('flip');
+      setTimeout(() => {
+        front.textContent = caractere;
+        tile.classList.remove('flip');
+      }, 300);
+    }, atraso);
+  }
+
+  function mostrar(texto) {
+    const alvo = centralizar(texto);
+    tiles.forEach((tile, i) => flipTileTo(tile, alvo[i], i * 22));
+  }
+
+  // ROOM ainda pode estar vazio (usuario nao escolheu sala): ignora ate existir.
+  const frases = () => ['LOL2', ROOM, 'IAGO SERAFIM E SAMUEL CORDOVIL'].filter(Boolean);
+  let indice = 0;
+  function proximaFrase() {
+    const lista = frases();
+    mostrar(lista[indice % lista.length]);
+    indice++;
+  }
+  proximaFrase();
+  setInterval(proximaFrase, 4200);
+})();
 
 start();
 </script>

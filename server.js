@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { ExpressPeerServer } = require('peer');
 const { WebSocketServer } = require('ws');
+const { default: DottedMap } = require('dotted-map');
 
 const app = express();
 app.use(express.json({ limit: '4kb' }));
@@ -216,11 +217,11 @@ server.on('upgrade', (req, socket, head) => {
 // O servidor so guarda QUEM esta em cada sala e QUEM esta transmitindo.
 // O video nunca passa por aqui — vai direto de um usuario pro outro.
 // ============================================================
-const rooms = new Map(); // codigo -> Map(peerId -> { name, broadcasting, ws })
+const rooms = new Map(); // codigo -> Map(peerId -> { name, broadcasting, loc, ws })
 
 function listMembers(room) {
   return [...room.entries()].map(([peerId, m]) => ({
-    peerId, name: m.name, broadcasting: m.broadcasting, camOn: m.camOn
+    peerId, name: m.name, broadcasting: m.broadcasting, camOn: m.camOn, loc: m.loc || null
   }));
 }
 
@@ -231,6 +232,43 @@ function sendTo(ws, obj) {
 function broadcast(room, obj, exceptId) {
   room.forEach((m, id) => { if (id !== exceptId) sendTo(m.ws, obj); });
 }
+
+// So aceita lat/lng validos — o resto (cidade) e so um rotulo, sem risco.
+function normalizarLoc(loc) {
+  if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return null;
+  if (!isFinite(loc.lat) || !isFinite(loc.lon)) return null;
+  if (loc.lat < -90 || loc.lat > 90 || loc.lon < -180 || loc.lon > 180) return null;
+  return { lat: loc.lat, lon: loc.lon, city: String(loc.city || '').slice(0, 60) };
+}
+
+// ============================================================
+// Mapa-mundi pontilhado (fundo decorativo) com um ponto colorido pra cada
+// pessoa da sala que tem localizacao (por IP, aproximada — ninguem manda
+// GPS). O grid de pontos do mundo e cacheado pela propria lib, entao gerar
+// de novo a cada pedido custa quase nada depois da primeira vez.
+// ============================================================
+const CORES_PIN = ['#57d98a', '#f0b232', '#f4767a', '#8b95ff', '#6bf0c2', '#ff9ecb', '#7ad1ff', '#e3b341'];
+function corDoPeer(peerId) {
+  let h = 0;
+  for (let i = 0; i < peerId.length; i++) h = (h * 31 + peerId.charCodeAt(i)) >>> 0;
+  return CORES_PIN[h % CORES_PIN.length];
+}
+
+function gerarMapaSVG(membros) {
+  const mapa = new DottedMap({ height: 42, grid: 'diagonal' });
+  membros.forEach(([peerId, m]) => {
+    if (!m.loc) return;
+    mapa.addPin({ lat: m.loc.lat, lng: m.loc.lon, svgOptions: { color: corDoPeer(peerId), radius: 0.75 } });
+  });
+  return mapa.getSVG({ radius: 0.24, color: '#39415c', shape: 'circle', backgroundColor: 'transparent' });
+}
+
+app.get('/api/mapa/:sala', (req, res) => {
+  if (!tokenValido(req.query.t)) return res.status(401).end();
+  const codigo = String(req.params.sala || '').toUpperCase().trim();
+  const room = rooms.get(codigo);
+  res.type('image/svg+xml').send(gerarMapaSVG(room ? [...room.entries()] : []));
+});
 
 roomWss.on('connection', (ws) => {
   let myRoom = null;
@@ -274,15 +312,16 @@ roomWss.on('connection', (ws) => {
       // ele informa o estado atual pra nao voltar "zerado" pros outros.
       const broadcasting = !!msg.broadcasting;
       const camOn = !!msg.camOn;
+      const loc = normalizarLoc(msg.loc);
 
       // Manda a lista ANTES de me incluir: sao os que ja estavam la.
       sendTo(ws, { type: 'join-ok', you: myId, room: code, members: listMembers(room) });
 
       const existed = room.has(myId);
-      room.set(myId, { name, broadcasting, camOn, ws });
+      room.set(myId, { name, broadcasting, camOn, loc, ws });
       broadcast(room, {
         type: existed ? 'member-updated' : 'member-joined',
-        member: { peerId: myId, name, broadcasting, camOn }
+        member: { peerId: myId, name, broadcasting, camOn, loc }
       }, myId);
 
       console.log(`[sala ${code}] ${name} ${existed ? 'reconectou' : 'entrou'} (${room.size} na sala)`);
@@ -310,6 +349,20 @@ roomWss.on('connection', (ws) => {
       if (!me) return;
       me.camOn = !!msg.on;
       broadcast(room, { type: 'cam-state', peerId: myId, on: me.camOn }, myId);
+    }
+
+    // Localizacao aproximada (por IP) chegando depois do join — a consulta
+    // e assincrona no navegador, entao pode nao estar pronta no join ainda.
+    if (msg.type === 'location' && myRoom) {
+      const room = rooms.get(myRoom);
+      if (!room) return;
+      const me = room.get(myId);
+      if (!me) return;
+      me.loc = normalizarLoc(msg.loc);
+      broadcast(room, {
+        type: 'member-updated',
+        member: { peerId: myId, name: me.name, broadcasting: me.broadcasting, camOn: me.camOn, loc: me.loc }
+      }, myId);
     }
 
     // Assinatura sob demanda: ninguem recebe video sem pedir.
