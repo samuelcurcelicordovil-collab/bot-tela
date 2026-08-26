@@ -80,6 +80,10 @@
   .chatmsg { margin-bottom: 12px; overflow-wrap: anywhere; }
   .chatmsg .chatname { color: #77d99a; font-size: .78rem; font-weight: 700; }
   .chatmsg .chattext { margin-top: 2px; color: #e3e5e8; font-size: .86rem; line-height: 1.35; white-space: pre-wrap; }
+  .chatmsg .chatimg {
+    display: block; max-width: 100%; max-height: 180px; margin-top: 4px;
+    border-radius: 8px; cursor: pointer; background: #1a1b1e;
+  }
   .chatempty { color: #6a6f76; font-size: .82rem; text-align: center; padding: 20px 8px; }
   #chatForm { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #2f3136; }
   #chatInput { min-width: 0; padding: 9px; }
@@ -324,7 +328,7 @@
       <div class="chathead">Chat da sala<small>Converse com quem está conectado</small></div>
       <div id="chatMessages"><div class="chatempty">Nenhuma mensagem ainda.</div></div>
       <form id="chatForm">
-        <input type="text" id="chatInput" maxlength="500" placeholder="Escreva uma mensagem..." autocomplete="off">
+        <input type="text" id="chatInput" maxlength="500" placeholder="Mensagem ou link de imagem/GIF..." autocomplete="off">
         <button type="submit" title="Enviar mensagem">Enviar</button>
       </form>
     </aside>
@@ -710,6 +714,11 @@ $('roomBadge').addEventListener('click', async () => {
   setTimeout(() => { badge.textContent = original; }, 1800);
 });
 
+// Atalho pra GIF/imagem: se a mensagem for SO um link direto pra imagem
+// (ex: link "copiar imagem" do Tenor/Giphy, que termina em .gif/.png/...),
+// mostra ela embutida em vez de como texto puro.
+const REGEX_LINK_IMAGEM = /^https:\/\/\S+\.(gif|png|jpe?g|webp)(\?\S*)?$/i;
+
 function adicionarMensagemChat(msg) {
   const area = $('chatMessages');
   const vazio = area.querySelector('.chatempty');
@@ -720,10 +729,32 @@ function adicionarMensagemChat(msg) {
   const nome = document.createElement('div');
   nome.className = 'chatname';
   nome.textContent = msg.name || 'Anônimo';
-  const texto = document.createElement('div');
-  texto.className = 'chattext';
-  texto.textContent = msg.text;
-  item.append(nome, texto);
+  item.appendChild(nome);
+
+  const texto = String(msg.text || '').trim();
+  if (REGEX_LINK_IMAGEM.test(texto)) {
+    const img = document.createElement('img');
+    img.className = 'chatimg';
+    img.src = texto;
+    img.alt = 'imagem/GIF';
+    img.loading = 'lazy';
+    img.title = 'Clique para abrir em tamanho real';
+    img.addEventListener('click', () => window.open(texto, '_blank', 'noopener'));
+    // Link nao virou imagem de verdade (quebrado, expirou etc): cai pra texto.
+    img.addEventListener('error', () => {
+      const fallback = document.createElement('div');
+      fallback.className = 'chattext';
+      fallback.textContent = msg.text;
+      img.replaceWith(fallback);
+    }, { once: true });
+    item.appendChild(img);
+  } else {
+    const div = document.createElement('div');
+    div.className = 'chattext';
+    div.textContent = msg.text;
+    item.appendChild(div);
+  }
+
   area.appendChild(item);
   while (area.children.length > 100) area.firstElementChild.remove();
   area.scrollTop = area.scrollHeight;
