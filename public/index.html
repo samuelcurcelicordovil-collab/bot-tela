@@ -307,6 +307,8 @@
     <span class="count" id="memberCount"></span>
     <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue no 🔧 se não precisar.">🔁 retransmissão forçada</span>
     <span id="upBadge" class="stats" style="display:none"></span>
+    <span class="stats" id="roomBadge" title="Clique para copiar o link de convite desta sala" style="cursor:pointer"></span>
+    <button class="iconbtn" id="btnTrocarSala" title="Trocar de sala">🔀</button>
     <div class="spacer"></div>
     <span class="mename" id="meName" title="Clique para trocar seu nome"></span>
     <button class="iconbtn" id="btnDiag" title="Testar conexão">🔧</button>
@@ -398,6 +400,21 @@
     <p class="lead">Transmissão de telas do servidor <b style="color:#3ba55c">LOL 2</b>. Diga seu nome e você já cai na sala.</p>
     <input type="text" id="nameInput" placeholder="Como seus amigos te chamam" maxlength="24" autocomplete="off">
     <div class="actions"><button id="btnEnter">Entrar</button></div>
+  </div>
+</div>
+
+<!-- ================= SALA (grupos diferentes nao se atrapalham) ================= -->
+<div class="backdrop" id="salaBackdrop">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <img src="lol2.png" alt="LOL 2" class="lol2 big" onerror="this.classList.add('missing')">
+    <h3>Escolha uma sala</h3>
+    <p class="lead">Cada sala é isolada: só quem tem o código entra e vê quem está nela. Crie uma sala nova ou entre com o código de quem te chamou.</p>
+    <input type="text" id="salaInput" placeholder="Código da sala" maxlength="10" autocomplete="off" style="text-transform:uppercase;text-align:center;letter-spacing:2px;font-weight:700">
+    <div class="actions">
+      <button class="ghost" id="btnCriarSala">🎲 Gerar código novo</button>
+      <button id="btnEntrarSala">Entrar na sala</button>
+    </div>
+    <div class="status" id="salaStatus"></div>
   </div>
 </div>
 
@@ -512,7 +529,29 @@ async function testarConexao() {
 // ============================================================
 // Estado
 // ============================================================
-const ROOM = 'LOL2';            // sala unica e fixa: abrir o site ja e entrar
+// Sala escolhida por quem entra — assim varios grupos usam o mesmo site
+// sem um ver a transmissao/camera/chat do outro. Definida em start(),
+// antes de boot() acontecer.
+let ROOM = null;
+
+const CODIGO_SALA_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sem O/0 e I/1, pra nao confundir
+function gerarCodigoSala() {
+  let s = '';
+  for (let i = 0; i < 5; i++) s += CODIGO_SALA_CHARS[Math.floor(Math.random() * CODIGO_SALA_CHARS.length)];
+  return s;
+}
+function normalizarCodigoSala(s) {
+  return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+}
+function salaDaURL() {
+  return normalizarCodigoSala(new URLSearchParams(location.search).get('sala') || '');
+}
+// Deixa o link da barra de enderecos sempre pronto pra compartilhar a sala atual.
+function refletirSalaNaURL() {
+  const url = new URL(location.href);
+  url.searchParams.set('sala', ROOM);
+  history.replaceState(null, '', url);
+}
 
 // Identidade estavel por aba: sobrevive a reconexoes, entao quem estava
 // te assistindo continua achando voce pelo mesmo id.
@@ -564,6 +603,18 @@ async function start() {
     $('nameInput').focus();
     return;
   }
+  if (!ROOM) {
+    ROOM = salaDaURL() || normalizarCodigoSala(localStorage.getItem('botTelaSala'));
+    if (!ROOM) {
+      $('salaBackdrop').classList.add('open');
+      $('salaInput').value = gerarCodigoSala();
+      $('salaInput').focus();
+      $('salaInput').select();
+      return;
+    }
+    localStorage.setItem('botTelaSala', ROOM);
+    refletirSalaNaURL();
+  }
   boot();
 }
 
@@ -610,9 +661,54 @@ $('btnEnter').addEventListener('click', () => {
   myName = n;
   localStorage.setItem('botTelaNome', n);
   $('nameBackdrop').classList.remove('open');
-  boot();
+  start();
 });
 $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnEnter').click(); });
+
+$('btnCriarSala').addEventListener('click', () => {
+  $('salaInput').value = gerarCodigoSala();
+  $('salaInput').focus();
+});
+
+function confirmarSala() {
+  const codigo = normalizarCodigoSala($('salaInput').value);
+  const st = $('salaStatus');
+  if (!codigo) {
+    st.className = 'status err';
+    st.textContent = 'Digite um código ou clique em "Gerar código novo".';
+    return;
+  }
+  ROOM = codigo;
+  localStorage.setItem('botTelaSala', ROOM);
+  refletirSalaNaURL();
+  $('salaBackdrop').classList.remove('open');
+  boot();
+}
+$('btnEntrarSala').addEventListener('click', confirmarSala);
+$('salaInput').addEventListener('keydown', e => { if (e.key === 'Enter') confirmarSala(); });
+
+$('btnTrocarSala').addEventListener('click', () => {
+  if (!confirm('Sair desta sala e escolher outra?')) return;
+  localStorage.removeItem('botTelaSala');
+  const url = new URL(location.href);
+  url.searchParams.delete('sala');
+  location.href = url.toString();
+});
+
+$('roomBadge').addEventListener('click', async () => {
+  const url = new URL(location.href);
+  url.searchParams.set('sala', ROOM);
+  const texto = url.toString();
+  const badge = $('roomBadge');
+  const original = badge.textContent;
+  try {
+    await navigator.clipboard.writeText(texto);
+    badge.textContent = '✅ link copiado!';
+  } catch {
+    prompt('Copie o link da sala:', texto);
+  }
+  setTimeout(() => { badge.textContent = original; }, 1800);
+});
 
 function adicionarMensagemChat(msg) {
   const area = $('chatMessages');
@@ -654,6 +750,7 @@ $('meName').addEventListener('click', () => {
 async function boot() {
   $('app').style.display = 'flex';
   $('meName').textContent = myName;
+  $('roomBadge').textContent = '🔑 ' + ROOM;
   $('relayBadge').style.display = forcarRelay() ? '' : 'none';
   await loadIce();
   initPeer();
