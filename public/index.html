@@ -97,8 +97,9 @@
   #diagPanel.on { display: block; }
 
   #stage {
-    flex: 1; overflow: auto; padding: 18px; display: grid;
-    grid-template-columns: 240px minmax(0, 1fr); gap: 14px; align-items: start;
+    flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px; display: grid;
+    grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    gap: 14px; align-items: start;
   }
 
   #peopleView, #watchView, #gridView { grid-column: 2; min-width: 0; }
@@ -184,6 +185,19 @@
      estilo inline e faz cair no display:none daqui — o botao nunca aparecia. */
   .ptile.live .watchbtn { display: block; }
   .watchbtn:hover { background: #2d8049; }
+  /* Botao "trocar tela" — so aparece pra quem esta transmitindo, no proprio
+     quadro e na tela de "assistindo a minha transmissao". Estilo discreto,
+     igual aos controles que ficam por cima do video. Visibilidade pelo JS. */
+  .switchbtn {
+    position: absolute; right: 8px; bottom: 44px; display: none;
+    align-items: center; gap: 6px; padding: 6px 10px;
+    font-size: .8rem; font-weight: 500; color: #e3e5e8;
+    background: rgba(0, 0, 0, .55); border: 1px solid #3f4147; border-radius: 6px;
+  }
+  .switchbtn svg { width: 15px; height: 15px; }
+  .switchbtn:hover { background: rgba(0, 0, 0, .8); border-color: #5865f2; }
+  /* Na tela de "assistindo a minha propria transmissao": canto de cima da esquerda. */
+  #btnTrocarTela { top: 12px; left: 12px; right: auto; bottom: auto; z-index: 4; }
   .ptile.live { cursor: pointer; }
   .ptile.live:hover { border-color: #57d98a; }
   .ptile.live:hover .watchbtn { background: #2d8049; }
@@ -218,7 +232,7 @@
   }
 
   /* ---------- ASSISTINDO ---------- */
-  #watchView { display: none; flex-direction: column; height: 100%; gap: 10px; }
+  #watchView { display: none; flex-direction: column; height: 100%; min-height: 0; gap: 10px; }
   .watchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .watchbar .who { font-weight: 600; }
   .live-badge { background: #da373c; border-radius: 4px; padding: 2px 7px;
@@ -444,6 +458,10 @@
       <div class="switchrow" id="switchRow"></div>
       <div class="videoframe" id="watchFrame">
         <video id="watchVideo" autoplay playsinline></video>
+        <button id="btnTrocarTela" class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+          <span>Trocar tela</span>
+        </button>
         <div id="watchMsg" class="framemsg"></div>
         <div class="camoverlay" id="watchCam">
           <video autoplay playsinline muted></video>
@@ -719,6 +737,18 @@ let myName = localStorage.getItem('botTelaNome') || '';
 let peer = null, ws = null;
 let myStream = null, myCam = null;
 let audioCtx = null;
+// Última configuração de compartilhamento (áudio/mic/dispositivo) — pra
+// "trocar tela" recriar a captura igualzinha sem perguntar de novo.
+let ultimaConfigShare = null;
+// TODAS as faixas cruas da captura atual (vídeo, áudio da tela, do dispositivo
+// e do mic). O myStream às vezes só carrega a versão já mixada, então guardamos
+// as originais aqui pra conseguir PARAR todas — senão o Chrome deixa a barra de
+// "compartilhando" da captura antiga viva ao trocar de tela.
+let sharedInputTracks = [];
+function pararCapturaAtual() {
+  sharedInputTracks.forEach(t => { try { t.stop(); } catch {} });
+  sharedInputTracks = [];
+}
 
 const members = new Map();      // peerId -> { name, broadcasting, camOn, isMe }
 const watchers = new Set();     // quem assiste a MINHA tela
@@ -1373,6 +1403,12 @@ $('btnConfirmShare').addEventListener('click', async () => {
 
     display.getVideoTracks()[0].addEventListener('ended', stopShare);
 
+    sharedInputTracks = [...display.getTracks(), ...audioTracks, mixed].filter(Boolean);
+    ultimaConfigShare = {
+      choice, wantMic,
+      deviceId: choice === 'device' ? $('deviceSelect').value : null
+    };
+
     members.get(myPeerId).broadcasting = true;
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: true }));
     watchers.forEach(id => callPeer(id));
@@ -1435,12 +1471,83 @@ function stopShare() {
   outgoing.forEach(c => c.close());
   outgoing.clear();
   myStream.getTracks().forEach(t => t.stop());
+  pararCapturaAtual();
   myStream = null;
+  ultimaConfigShare = null;
   const me = members.get(myPeerId);
   if (me) me.broadcasting = false;
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: false }));
   if (watchTarget === myPeerId) backToPeople();
   render();
+}
+
+// ============================================================
+// Trocar a tela transmitida SEM derrubar a transmissão
+// Recaptura tela + áudio no MESMO modo de antes e troca as faixas em cada
+// conexão com replaceTrack: quem assiste nem pisca, não reassina nem reconecta.
+// Importante: PARAR todas as faixas da captura anterior (vídeo E áudio).
+// Se sobrar qualquer faixa viva, o Chrome mostra a barra de "compartilhando"
+// duas vezes — a da captura velha e a da nova.
+// ============================================================
+async function trocarTela() {
+  if (!myStream || !ultimaConfigShare) return;
+  const { choice, wantMic, deviceId } = ultimaConfigShare;
+  try {
+    const qual = Number(localStorage.getItem('botTelaQualidade')) === 480 ? 480 : 720;
+    const video = {
+      frameRate: 30,
+      width: { max: qual === 480 ? 854 : 1280 },
+      height: { max: qual }
+    };
+
+    const display = await navigator.mediaDevices.getDisplayMedia({
+      video, audio: choice === 'display' ? {} : false
+    });
+    const novoVideo = display.getVideoTracks()[0];
+    if (!novoVideo) return;
+
+    try {
+      await novoVideo.applyConstraints({ width: video.width, height: video.height, frameRate: 30 });
+    } catch (e) {
+      console.warn('não consegui limitar a resolução:', e.message);
+    }
+    novoVideo.contentHint = 'motion';
+    novoVideo.addEventListener('ended', stopShare);
+
+    // Remonta o áudio igual ao compartilhamento original.
+    const audioTracks = [];
+    if (choice === 'display') display.getAudioTracks().forEach(t => audioTracks.push(t));
+    if (choice === 'device' && deviceId) {
+      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+      dev.getAudioTracks().forEach(t => audioTracks.push(t));
+    }
+    if (wantMic) {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mic.getAudioTracks().forEach(t => audioTracks.push(t));
+    }
+    const novoAudio = mixToOneTrack(audioTracks);
+    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+
+    // Troca as faixas em quem já está me assistindo (mantém bitrate/params).
+    await Promise.all([...outgoing.values()].map(async call => {
+      const pc = call.peerConnection;
+      if (!pc) return;
+      const vSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (vSender) await vSender.replaceTrack(novoVideo).catch(e => console.warn('replaceTrack vídeo:', e.message));
+      const aSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (aSender) await aSender.replaceTrack(novoAudio || null).catch(e => console.warn('replaceTrack áudio:', e.message));
+    }));
+
+    // Descarta TODA a captura anterior (vídeo E áudio) e adota as faixas novas.
+    myStream.getTracks().forEach(t => myStream.removeTrack(t));
+    pararCapturaAtual();
+    sharedInputTracks = [...display.getTracks(), ...audioTracks, novoAudio].filter(Boolean);
+    myStream.addTrack(novoVideo);
+    if (novoAudio) myStream.addTrack(novoAudio);
+    render();
+  } catch (err) {
+    console.warn('troca de tela cancelada:', err.message);
+  }
 }
 
 // ============================================================
@@ -1645,6 +1752,8 @@ $('btnShowCam').addEventListener('click', () => {
   saveCamPref();
   render();
 });
+
+$('btnTrocarTela').addEventListener('click', trocarTela);
 
 // ============================================================
 // Estatísticas da transmissão que estou vendo
@@ -1924,10 +2033,18 @@ function buildPersonTile(peerId) {
     <div class="pipicon" title="Pop-up (fica por cima de outras janelas)">⧉</div>
     <div class="viewchip"></div>
     <div class="namechip"></div>
+    <button class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+      <span>Trocar tela</span>
+    </button>
     <button class="watchbtn"></button>`;
   tile.querySelector('.watchbtn').addEventListener('click', e => {
     e.stopPropagation();
     watchPerson(peerId);
+  });
+  tile.querySelector('.switchbtn').addEventListener('click', e => {
+    e.stopPropagation();
+    trocarTela();
   });
   tile.querySelector('.pipicon').addEventListener('click', e => {
     e.stopPropagation();
@@ -1971,6 +2088,9 @@ function renderPeople() {
     const wb = tile.querySelector('.watchbtn');
     wb.textContent = m.isMe ? 'Ver minha transmissão' : 'Assistir transmissão';
 
+    // Só quem está transmitindo vê o botão de troca rápida, e só no próprio quadro.
+    tile.querySelector('.switchbtn').style.display = (m.isMe && myStream) ? 'inline-flex' : 'none';
+
     const vc = tile.querySelector('.viewchip');
     if (m.isMe && myStream) {
       vc.style.display = 'block';
@@ -2008,6 +2128,9 @@ function renderWatch() {
   renderCamStrip();
   const camDisponivel = !!(watchTarget === myPeerId ? myCam : camStreams.get(watchTarget)) && m.camOn;
   $('btnShowCam').style.display = (camDisponivel && camPref.hidden) ? '' : 'none';
+
+  // Botao de troca rapida de tela: so quando estou vendo a MINHA transmissao.
+  $('btnTrocarTela').style.display = (watchTarget === myPeerId && myStream) ? 'inline-flex' : 'none';
 
   const video = $('watchVideo');
   const stream = watchTarget === myPeerId ? myStream : streams.get(watchTarget);
