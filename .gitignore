@@ -8,3 +8,5 @@ npm-debug.log*
 
 # Senha de entrada — NUNCA subir para o Git
 senha.txt
+
+quedas.log

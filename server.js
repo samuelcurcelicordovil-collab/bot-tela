@@ -7,6 +7,52 @@ const { ExpressPeerServer } = require('peer');
 const { WebSocketServer } = require('ws');
 const { default: DottedMap } = require('dotted-map');
 
+// ============================================================
+// Caixa-preta
+//
+// Sem isto, um erro nao tratado mata o processo em silencio e o plano
+// gratuito do Render nao guarda historico — a queda fica sem explicacao.
+// Aqui registramos o motivo antes de morrer e mantemos os ultimos eventos
+// para consulta em /api/diagnostico.
+// ============================================================
+const INICIO = Date.now();
+const eventos = [];   // ultimos acontecimentos relevantes
+
+function registrar(tipo, detalhe) {
+  const e = { quando: new Date().toISOString(), tipo, detalhe: String(detalhe).slice(0, 800) };
+  eventos.push(e);
+  if (eventos.length > 60) eventos.shift();
+  console.log('[' + tipo + '] ' + e.detalhe);
+  return e;
+}
+
+function anotarQueda(tipo, err) {
+  const texto = (err && err.stack) ? err.stack : String(err);
+  registrar(tipo, texto);
+  // Tenta deixar registrado em disco tambem. No Render o disco some quando
+  // o container e recriado, mas sobrevive a um simples reinicio do processo.
+  try {
+    fs.appendFileSync(path.join(__dirname, 'quedas.log'),
+      new Date().toISOString() + ' [' + tipo + '] ' + texto + '\n\n');
+  } catch {}
+}
+
+process.on('uncaughtException', (err) => {
+  anotarQueda('ERRO FATAL', err);
+  // Sai de proposito: com o estado possivelmente corrompido, e mais seguro
+  // deixar o Render subir uma instancia limpa do que seguir quebrado.
+  setTimeout(() => process.exit(1), 300);
+});
+
+process.on('unhandledRejection', (motivo) => {
+  anotarQueda('PROMESSA REJEITADA', motivo);
+});
+
+process.on('SIGTERM', () => {
+  registrar('DESLIGANDO', 'SIGTERM — o Render pediu para encerrar (hibernacao, deploy novo ou manutencao)');
+  process.exit(0);
+});
+
 const app = express();
 app.use(express.json({ limit: '4kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -66,6 +112,32 @@ function podeTentar(ip) {
 }
 
 app.get('/api/precisa-senha', (req, res) => res.json({ precisa: !!SENHA }));
+
+// Raio-x do servidor: ha quanto tempo esta de pe, quanta memoria usa e o
+// que aconteceu de errado. Protegido pela senha.
+app.get('/api/diagnostico', (req, res) => {
+  if (!tokenValido(req.query.t)) return res.status(401).json({ erro: 'sem autorizacao' });
+  const mem = process.memoryUsage();
+  const salas = [];
+  rooms.forEach((room, codigo) => salas.push({ sala: codigo, pessoas: room.size }));
+  let quedasAnteriores = null;
+  try {
+    quedasAnteriores = fs.readFileSync(path.join(__dirname, 'quedas.log'), 'utf8').slice(-4000);
+  } catch {}
+  res.json({
+    dePeHa: Math.round((Date.now() - INICIO) / 1000) + 's',
+    dePeHaMinutos: Math.round((Date.now() - INICIO) / 60000),
+    memoriaMB: {
+      usada: Math.round(mem.heapUsed / 1048576),
+      total: Math.round(mem.rss / 1048576),
+      limiteDoPlanoGratis: 512
+    },
+    salas,
+    conexoesAbertas: roomWss.clients.size,
+    eventos,
+    quedasAnteriores
+  });
+});
 
 // Contagem publica de "quanta gente esta online agora" (todas as salas
 // somadas) — so o numero, sem nome de sala nem quem esta nela. Usado na
@@ -279,9 +351,13 @@ app.get('/api/mapa/:sala', (req, res) => {
   res.type('image/svg+xml').send(gerarMapaSVG(room ? [...room.entries()] : []));
 });
 
+roomWss.on('error', (err) => registrar('ERRO NO WEBSOCKET', err && err.message));
+
 roomWss.on('connection', (ws) => {
   let myRoom = null;
   let myId = null;
+  // Um socket que da erro sem tratamento derruba o processo inteiro.
+  ws.on('error', (err) => registrar('ERRO DE CONEXAO', err && err.message));
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
@@ -441,4 +517,15 @@ server.listen(PORT, async () => {
   }
 
   console.log('Abra essa URL no navegador para criar ou entrar numa sala.');
+  registrar('INICIADO', 'servidor no ar na porta ' + PORT);
 });
+
+// A cada 5 minutos anota memoria e ocupacao. Se a queda for por falta de
+// memoria (o plano gratis da 512 MB), o rastro fica visivel aqui.
+setInterval(() => {
+  const mb = Math.round(process.memoryUsage().rss / 1048576);
+  let pessoas = 0;
+  rooms.forEach(r => { pessoas += r.size; });
+  if (mb > 380) registrar('MEMORIA ALTA', mb + ' MB de 512 — risco de derrubar o servidor');
+  else registrar('OK', mb + ' MB, ' + pessoas + ' pessoa(s), ' + roomWss.clients.size + ' conexao(oes)');
+}, 5 * 60000);
