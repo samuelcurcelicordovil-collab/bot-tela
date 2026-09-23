@@ -1122,9 +1122,11 @@ function criarPlayer() {
       // confiar so nos nossos botoes.
       onStateChange: (e) => {
         if (aplicandoRemoto) return;
-        if (e.data === YT.PlayerState.ENDED) return definirTocando(false);
-        if (e.data === YT.PlayerState.PLAYING && !musicaTocando) definirTocando(true);
-        if (e.data === YT.PlayerState.PAUSED && musicaTocando) definirTocando(false);
+        // Aqui a ordem veio do proprio player, entao ele ja esta no estado
+        // certo: avisamos a sala sem mandar o player fazer de novo.
+        if (e.data === YT.PlayerState.ENDED) return definirTocando(false, true);
+        if (e.data === YT.PlayerState.PLAYING && !musicaTocando) definirTocando(true, true);
+        if (e.data === YT.PlayerState.PAUSED && musicaTocando) definirTocando(false, true);
       }
     }
   });
@@ -1185,9 +1187,18 @@ function receberMusica(msg) {
   if (ytPronto) aplicarEstadoMusica(mudouFaixa);   // senao o onReady aplica
 }
 
-function definirTocando(on) {
+function definirTocando(on, jaAplicado = false) {
   musicaTocando = on;
   ultimoSync = { posicao: posicaoAtual(), em: Date.now() };
+  // O meu player tambem tem que obedecer. Sem isto, apertar pausa avisava a
+  // sala inteira e a musica parava pra todo mundo menos pra quem apertou.
+  // 'jaAplicado' e pra quando a ordem veio do proprio player (o usuario mexeu
+  // nele direto, ou a faixa acabou): ai nao ha nada pra reaplicar.
+  if (!jaAplicado && ytPronto) {
+    aplicandoRemoto = true;
+    try { if (on) ytPlayer.playVideo(); else ytPlayer.pauseVideo(); } catch {}
+    destravarDepois();
+  }
   renderMusica();
   enviarMusica();
 }
