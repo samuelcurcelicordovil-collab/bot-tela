@@ -50,6 +50,8 @@
   const GESTURE_BY_ID = Object.fromEntries(GESTURES.map(g => [g.id, g]));
   const GESTURE_BY_MODEL = Object.fromEntries(GESTURES.filter(g => g.model).map(g => [g.model, g.id]));
 
+  const TIP_IDX = [4, 8, 12, 16, 20];   // pontas: polegar, indicador, medio, anelar, mindinho
+  const TAU = Math.PI * 2;
   const CYAN = "#63e8d4", AMBER = "#ffb648", WHITE = "#ffffff";
   const Z_WEIGHT = 0.5;
 
@@ -767,8 +769,8 @@
     return recognizerPromise;
   }
 
-  // start downloading right away so the camera starts faster after the click
-  loadRecognizer().catch(() => {});
+  // O download NAO comeca aqui de proposito: sao ~18 MB, e quem nunca ligar
+  // os gestos nao deve pagar por eles. Quem dispara e o iniciar().
 
 
   // ============================================================
