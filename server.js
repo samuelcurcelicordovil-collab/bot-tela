@@ -74,6 +74,17 @@ function lerSenha() {
 }
 const SENHA = lerSenha();
 
+// A chave da API do YouTube fica AQUI, no servidor. Se ela fosse pro navegador,
+// qualquer um abriria o console, levaria a chave embora e torraria a cota
+// diaria da sala. Vem de YOUTUBE_API_KEY (servidor hospedado) ou de
+// youtube.txt (sua maquina) — nenhum dos dois vai pro Git.
+function lerChaveYoutube() {
+  if (process.env.YOUTUBE_API_KEY) return process.env.YOUTUBE_API_KEY.trim();
+  try { return fs.readFileSync(path.join(__dirname, 'youtube.txt'), 'utf8').trim() || null; }
+  catch { return null; }
+}
+const CHAVE_YT = lerChaveYoutube();
+
 // A chave do token deriva da propria senha, entao reiniciar o servidor nao
 // desloga ninguem — e trocar a senha invalida todos os acessos de uma vez.
 const chaveToken = () => crypto.createHash('sha256').update(SENHA || 'aberto').digest();
@@ -258,6 +269,44 @@ app.get('/api/ice', async (req, res) => {
   }
 });
 
+// ============================================================
+// Busca de musica
+//
+// O navegador nunca fala com o YouTube direto: pede pra ca, e nos
+// perguntamos por ele. E o mesmo motivo do /api/ice — segredo do servidor
+// nao pode vazar pro cliente.
+//
+// Cada busca custa 100 unidades da cota gratis (10.000/dia), entao da
+// umas 100 buscas por dia na conta inteira.
+// ============================================================
+app.get('/api/buscar-musica', async (req, res) => {
+  if (!tokenValido(req.query.t)) return res.status(401).json({ erro: 'sem autorizacao' });
+  if (!CHAVE_YT) {
+    return res.status(503).json({ erro: 'sem chave', dica: 'defina YOUTUBE_API_KEY ou crie o arquivo youtube.txt' });
+  }
+  const q = String(req.query.q || '').trim().slice(0, 100);
+  if (!q) return res.json({ itens: [] });
+  try {
+    const url = 'https://www.googleapis.com/youtube/v3/search'
+      + '?part=snippet&type=video&videoEmbeddable=true&maxResults=8'
+      + '&q=' + encodeURIComponent(q) + '&key=' + CHAVE_YT;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('YouTube respondeu ' + r.status);
+    const dados = await r.json();
+    res.json({
+      itens: (dados.items || []).map(i => ({
+        id: i.id.videoId,
+        titulo: decodificarHtml(i.snippet.title),
+        canal: decodificarHtml(i.snippet.channelTitle),
+        capa: (i.snippet.thumbnails && i.snippet.thumbnails.default || {}).url || ''
+      }))
+    });
+  } catch (err) {
+    console.error('busca de musica falhou:', err.message);
+    res.status(502).json({ erro: err.message });
+  }
+});
+
 const server = http.createServer(app);
 
 // ATENCAO: temos DOIS WebSockets no mesmo servidor HTTP — o do PeerJS
@@ -299,6 +348,36 @@ server.on('upgrade', (req, socket, head) => {
 // O video nunca passa por aqui — vai direto de um usuario pro outro.
 // ============================================================
 const rooms = new Map(); // codigo -> Map(peerId -> { name, broadcasting, loc, ws })
+
+// O que esta tocando em cada sala. So o PONTEIRO da musica mora aqui
+// (qual faixa, em que segundo, desde quando) — o audio nunca passa pelo
+// servidor, cada navegador toca por conta propria.
+const musicas = new Map(); // codigo -> { video, tocando, posicao, em, porQuem }
+
+// Tudo que vem do navegador e corta no tamanho — o cliente pode mandar
+// qualquer coisa, e isto aqui vai ser reenviado pra sala inteira.
+// O YouTube devolve o titulo com entidades HTML ("Should&#39;ve"). Como a
+// gente escreve com textContent, sem desfazer isso o usuario le o codigo cru.
+function decodificarHtml(t) {
+  return String(t)
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');   // por ultimo: senao desfaria os outros antes da hora
+}
+
+function limparVideo(v) {
+  if (!v || !v.id) return null;
+  return {
+    id: String(v.id).slice(0, 20),
+    titulo: String(v.titulo || '').slice(0, 120),
+    canal: String(v.canal || '').slice(0, 60),
+    capa: String(v.capa || '').slice(0, 300)
+  };
+}
 
 function listMembers(room) {
   return [...room.entries()].map(([peerId, m]) => ({
@@ -379,6 +458,25 @@ roomWss.on('connection', (ws) => {
       return;
     }
 
+    // Jukebox da sala. Guardamos a posicao E o instante em que ela foi medida:
+    // e essa dupla que deixa quem chega depois entrar no mesmo segundo da
+    // musica em vez de comecar do zero.
+    if (msg.type === 'music' && myRoom) {
+      const room = rooms.get(myRoom);
+      const eu = room && room.get(myId);
+      if (!eu) return;
+      const estado = {
+        video: limparVideo(msg.video),
+        tocando: !!msg.tocando,
+        posicao: Math.max(0, Number(msg.posicao) || 0),
+        em: Date.now(),
+        porQuem: eu.name
+      };
+      if (estado.video) musicas.set(myRoom, estado); else musicas.delete(myRoom);
+      broadcast(room, { type: 'music', ...estado }, myId);
+      return;
+    }
+
     if (msg.type === 'join') {
       if (!tokenValido(msg.token)) {
         sendTo(ws, { type: 'auth-fail' });
@@ -400,7 +498,27 @@ roomWss.on('connection', (ws) => {
       const loc = normalizarLoc(msg.loc);
 
       // Manda a lista ANTES de me incluir: sao os que ja estavam la.
+      // Se o WebSocket cair bem na hora em que alguem escolhe a faixa, o
+      // servidor nunca fica sabendo dela e quem entrar depois nao ouve nada.
+      // Por isso quem chega tocando reensina a sala — mas so quando o servidor
+      // ainda nao tem faixa, senao quem entra em silencio apagaria a musica
+      // que os outros ja estao ouvindo.
+      const trazida = limparVideo(msg.musica);
+      if (trazida && !musicas.has(code)) {
+        musicas.set(code, {
+          video: trazida,
+          tocando: !!msg.musicaTocando,
+          posicao: Math.max(0, Number(msg.musicaPos) || 0),
+          em: Date.now(),
+          porQuem: name
+        });
+      }
+
       sendTo(ws, { type: 'join-ok', you: myId, room: code, members: listMembers(room) });
+
+      // Cai direto no ponto certo da musica que a sala ja estava ouvindo.
+      const musica = musicas.get(code);
+      if (musica) sendTo(ws, { type: 'music', ...musica });
 
       const existed = room.has(myId);
       room.set(myId, { name, broadcasting, camOn, loc, ws });
@@ -477,7 +595,7 @@ roomWss.on('connection', (ws) => {
     if (!atual || atual.ws !== ws) return;
     room.delete(myId);
     broadcast(room, { type: 'member-left', peerId: myId });
-    if (room.size === 0) rooms.delete(myRoom);
+    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); }
     console.log(`[sala ${myRoom}] alguem saiu (${room.size} restantes)`);
   });
 });

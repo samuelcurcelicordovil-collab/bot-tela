@@ -83,7 +83,10 @@
   .spacer { flex: 1; }
   .mename { font-size: .85rem; color: #c9cdd3; cursor: pointer; }
   .mename:hover { color: #fff; text-decoration: underline; }
-  .iconbtn { background: #2b2d31; padding: 7px 10px; font-size: .85rem; }
+  .iconbtn { background: #2b2d31; padding: 7px 10px; font-size: .85rem;
+             display: inline-flex; align-items: center; justify-content: center;
+             min-height: 32px; }
+  .iconbtn svg { width: 15px; height: 15px; display: block; }
 
   /* banner de reconexao */
   #netBanner {
@@ -100,16 +103,68 @@
 
   #stage {
     flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px; display: grid;
-    grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
     gap: 14px; align-items: start;
   }
 
-  #peopleView, #watchView, #gridView { grid-column: 2; min-width: 0; }
+  #peopleView, #watchView, #gridView { grid-column: 2; grid-row: 1 / -1; min-width: 0; }
+
+  /* ---------- MUSICA DA SALA ---------- */
+  #musicPanel {
+    position: relative;
+    grid-column: 1; grid-row: 1; width: 240px;
+    display: flex; flex-direction: column; background: #232428;
+    border: 1px solid #2f3136; border-radius: 10px; overflow: hidden;
+  }
+  /* O player do YouTube continua existindo — e ele que toca — mas fica fora
+     da area visivel. E 'fixed' longe da tela, e nao display:none, porque um
+     iframe escondido de verdade para de tocar. O painel mostra so a capa,
+     o titulo e os controles. */
+  .ytbox { position: fixed; left: -10000px; top: 0; width: 320px; height: 180px; }
+  .ytbox iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .musicnow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-bottom: 1px solid #2f3136;
+  }
+  .musicart { width: 46px; height: 46px; border-radius: 6px; object-fit: cover;
+              background: #1a1b1e; flex: none; }
+  .musicnow .txt { flex: 1; min-width: 0; }
+  .musicnow .t { font-size: .84rem; font-weight: 600; color: #e3e5e8; }
+  .musicnow .c { font-size: .74rem; color: #9aa0a6; margin-top: 2px; }
+  .musicnow .t, .musicnow .c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .musicbar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; }
+  .musicbar button {
+    padding: 0; width: 32px; height: 32px; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .musicbar button.ghost { background: #2b2d31; }
+  .musicbar svg { width: 15px; height: 15px; }
+  .musicbar input[type=range] { flex: 1; min-width: 0; accent-color: #5865f2; }
+  .musictime { font-size: .7rem; color: #9aa0a6; font-variant-numeric: tabular-nums; flex: none; }
+  #musicResults { max-height: 200px; overflow-y: auto; border-top: 1px solid #2f3136; }
+  #musicResults:empty { display: none; }
+  .mres { display: flex; gap: 8px; padding: 7px 10px; cursor: pointer; align-items: center; }
+  .mres:hover { background: #2b2d31; }
+  .mres img { width: 42px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; background: #1a1b1e; }
+  .mres .t {
+    font-size: .77rem; color: #e3e5e8; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .mres .c { font-size: .69rem; color: #9aa0a6; margin-top: 2px; }
+  #btnMusicUnlock {
+    display: none; width: calc(100% - 24px); margin: 0 12px 10px;
+    padding: 9px; font-size: .82rem; font-weight: 600;
+  }
+  .musicmsg { padding: 10px 12px; font-size: .78rem; color: #9aa0a6; line-height: 1.4; }
+  .musicmsg b { color: #e3e5e8; }
+  #musicForm { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #2f3136; }
+  #musicQuery { min-width: 0; flex: 1; padding: 9px; font-size: .85rem; }
+  #musicForm button { padding: 8px 12px; }
 
   /* ---------- CHAT DA SALA ---------- */
   #chatPanel {
     position: relative;
-    grid-column: 1; grid-row: 1; width: 240px; height: min(100%, 620px); min-height: 300px;
+    grid-column: 1; grid-row: 2; width: 240px; height: min(100%, 620px); min-height: 300px;
     display: flex; flex-direction: column; background: #232428;
     border: 1px solid #2f3136; border-radius: 10px; overflow: hidden;
   }
@@ -130,7 +185,8 @@
 
   @media (max-width: 760px) {
     #stage { display: flex; flex-direction: column; }
-    #peopleView, #watchView, #gridView, #chatPanel { width: 100%; }
+    #peopleView, #watchView, #gridView, #chatPanel, #musicPanel { width: 100%; }
+    #musicPanel { order: 3; flex: none; }
     #chatPanel { order: 4; height: 320px; min-height: 0; }
   }
 
@@ -206,14 +262,14 @@
 
   /* ---------- BRILHO NA BORDA (segue o mouse, tipo Aceternity) ---------- */
   /* --glow-opacity/--glow-angle sao escritos via JS (efeitoGlow mais abaixo). */
-  .ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button, .modal {
+  .ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal {
     --glow-opacity: 0;
     --glow-angle: 0deg;
     box-shadow: 0 0 24px 2px rgba(88, 101, 242, calc(var(--glow-opacity, 0) * .5));
     transition: box-shadow .2s ease;
   }
   .ptile::before, .camtile::before, .gtile::before, #chatPanel::before,
-  #controls::before, .ctl button::before, .modal::before {
+  #musicPanel::before, #controls::before, .ctl button::before, .modal::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -419,13 +475,17 @@
     <span class="servername">LOL 2</span>
     <span class="dot" id="connDot" title="Estado da conexão"></span>
     <span class="count" id="memberCount"></span>
-    <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue no 🔧 se não precisar.">🔁 retransmissão forçada</span>
+    <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue em "Testar conexão" lá em cima se não precisar.">🔁 retransmissão forçada</span>
     <span id="upBadge" class="stats" style="display:none"></span>
     <span class="stats" id="roomBadge" title="Clique para copiar o link de convite desta sala" style="cursor:pointer"></span>
-    <button class="iconbtn" id="btnTrocarSala" title="Sair da sala">🚪</button>
+    <button class="iconbtn" id="btnTrocarSala" title="Sair da sala">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+    </button>
     <div class="spacer"></div>
     <span class="mename" id="meName" title="Clique para trocar seu nome"></span>
-    <button class="iconbtn" id="btnDiag" title="Testar conexão">🔧</button>
+    <button class="iconbtn" id="btnDiag" title="Testar conexão">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    </button>
   </div>
 
   <div id="netBanner">⚠️ Conexão com o servidor caiu — reconectando automaticamente...</div>
@@ -433,6 +493,38 @@
 
   <div id="stage">
     <div id="peopleView"></div>
+
+    <aside id="musicPanel">
+      <div class="chathead">Música da sala<small>Todo mundo ouve junto, no mesmo segundo</small></div>
+      <div class="ytbox"><div id="ytFrame"></div></div>
+      <div class="musicnow">
+        <img id="musicArt" class="musicart" alt="" style="display:none">
+        <div class="txt">
+          <div class="t" id="musicTitle">Nada tocando</div>
+          <div class="c" id="musicChannel">Pesquise uma música aí embaixo</div>
+        </div>
+      </div>
+      <div class="musicbar">
+        <button id="btnMusicPlay" title="Tocar/pausar" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        </button>
+        <span class="musictime" id="musicTime">0:00</span>
+        <input type="range" id="musicSeek" min="0" max="100" value="0" step="0.1" title="Posição na música" disabled>
+        <button class="ghost" id="btnMusicStop" title="Tirar a música" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="musicbar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;color:#9aa0a6;flex:none"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 5.6a9 9 0 0 1 0 12.7"/></svg>
+        <input type="range" id="musicVol" min="0" max="100" value="60" title="Volume da música (só pra você)">
+      </div>
+      <button id="btnMusicUnlock">🔊 Toque para ouvir</button>
+      <div id="musicResults"></div>
+      <form id="musicForm">
+        <input type="text" id="musicQuery" placeholder="Pesquisar música..." autocomplete="off" maxlength="100">
+        <button type="submit">Buscar</button>
+      </form>
+    </aside>
 
     <aside id="chatPanel">
       <div class="chathead">Chat da sala<small>Converse com quem está conectado</small></div>
@@ -642,7 +734,10 @@ async function obterLocalizacao() {
     try { minhaLoc = JSON.parse(salva); return minhaLoc; } catch {}
   }
   try {
-    const r = await fetch('https://ipapi.co/json/');
+    // Sem o AbortSignal o fetch espera indefinidamente. Como o boot() aguarda
+    // esta funcao, um ipapi.co lento deixava o site preso na tela de entrada
+    // sem nenhum aviso. A localizacao e enfeite: nao vale travar o site por ela.
+    const r = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(4000) });
     const j = await r.json();
     if (typeof j.latitude === 'number' && typeof j.longitude === 'number') {
       minhaLoc = { lat: j.latitude, lon: j.longitude, city: j.city || '' };
@@ -730,10 +825,26 @@ function refletirSalaNaURL() {
   history.replaceState(null, '', url);
 }
 
+// crypto.randomUUID() so existe em contexto seguro (HTTPS ou localhost).
+// Abrindo pelo IP da rede em http:// — que e como se entra pelo celular na
+// rede de casa — ele vem undefined e derruba o script inteiro, deixando a
+// pagina montada mas sem nenhum botao funcionando. getRandomValues funciona
+// em qualquer contexto, entao montamos o UUID v4 na mao quando preciso.
+function novoId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;   // versao 4
+  b[8] = (b[8] & 0x3f) | 0x80;   // variante
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) +
+         '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+
 // Identidade estavel por aba: sobrevive a reconexoes, entao quem estava
 // te assistindo continua achando voce pelo mesmo id.
 let myPeerId = sessionStorage.getItem('botTelaId');
-if (!myPeerId) { myPeerId = crypto.randomUUID(); sessionStorage.setItem('botTelaId', myPeerId); }
+if (!myPeerId) { myPeerId = novoId(); sessionStorage.setItem('botTelaId', myPeerId); }
 
 let myName = localStorage.getItem('botTelaNome') || '';
 let peer = null, ws = null;
@@ -955,6 +1066,288 @@ $('chatForm').addEventListener('submit', e => {
   input.focus();
 });
 
+// ============================================================
+// MUSICA DA SALA (jukebox sincronizada)
+//
+// O audio NAO passa pelo WebRTC. O servidor so diz QUAL faixa e EM QUE
+// SEGUNDO ela esta; cada navegador toca a sua propria copia do YouTube.
+// Por isso a musica nao custa nada da banda de quem esta transmitindo.
+//
+// O quadro do YouTube fica visivel de proposito: a API deles nao permite
+// esconder o player nem extrair so o audio. A interface em volta e que faz
+// o conjunto parecer um player de musica.
+// ============================================================
+let ytPlayer = null;
+let ytPronto = false;
+let musicaAtual = null;       // { id, titulo, canal, capa }
+let musicaTocando = false;
+let ultimoSync = null;        // { posicao, em } — referencia pra corrigir deriva
+let aplicandoRemoto = false;  // mudanca vinda da sala nao pode voltar pra sala
+let arrastandoSeek = false;
+let volumeMusica = Number(localStorage.getItem('botTelaVolMusica') ?? 60);
+
+function mmss(seg) {
+  seg = Math.max(0, Math.floor(seg || 0));
+  return Math.floor(seg / 60) + ':' + String(seg % 60).padStart(2, '0');
+}
+
+// Solta o freio so depois que o player assentou: os eventos que ELE dispara
+// por causa da nossa mudanca voltariam pra sala como se fossem novos.
+function destravarDepois() {
+  setTimeout(() => { aplicandoRemoto = false; }, 700);
+}
+
+function carregarYT() {
+  if (window.YT && window.YT.Player) return criarPlayer();
+  if (document.getElementById('ytapi')) return;   // ja esta baixando
+  const tag = document.createElement('script');
+  tag.id = 'ytapi';
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+}
+window.onYouTubeIframeAPIReady = () => criarPlayer();
+
+function criarPlayer() {
+  if (ytPlayer) return;
+  ytPlayer = new YT.Player('ytFrame', {
+    width: '100%', height: '100%',
+    playerVars: { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, playsinline: 1 },
+    events: {
+      onReady: () => {
+        ytPronto = true;
+        try { ytPlayer.setVolume(volumeMusica); } catch {}
+        if (musicaAtual) aplicarEstadoMusica(true);
+      },
+      // O proprio player tambem avisa quando a faixa acaba — nao da pra
+      // confiar so nos nossos botoes.
+      onStateChange: (e) => {
+        if (aplicandoRemoto) return;
+        if (e.data === YT.PlayerState.ENDED) return definirTocando(false);
+        if (e.data === YT.PlayerState.PLAYING && !musicaTocando) definirTocando(true);
+        if (e.data === YT.PlayerState.PAUSED && musicaTocando) definirTocando(false);
+      }
+    }
+  });
+}
+
+function posicaoAtual() {
+  try { return (ytPronto && ytPlayer.getCurrentTime) ? ytPlayer.getCurrentTime() : 0; }
+  catch { return 0; }
+}
+
+// Onde a musica DEVERIA estar agora, contando o tempo que passou desde que
+// alguem mediu a posicao. E isso que faz quem chega atrasado cair no ponto certo.
+function posicaoEsperada() {
+  if (!ultimoSync) return 0;
+  const decorrido = musicaTocando ? (Date.now() - ultimoSync.em) / 1000 : 0;
+  return Math.max(0, ultimoSync.posicao + decorrido);
+}
+
+function enviarMusica() {
+  if (!ws || ws.readyState !== ws.OPEN) return;
+  ws.send(JSON.stringify({
+    type: 'music', video: musicaAtual, tocando: musicaTocando, posicao: posicaoAtual()
+  }));
+}
+
+function aplicarEstadoMusica(mudouFaixa) {
+  if (!ytPronto || !musicaAtual) return;
+  const alvo = posicaoEsperada();
+  aplicandoRemoto = true;
+  try {
+    if (mudouFaixa) {
+      const arg = { videoId: musicaAtual.id, startSeconds: alvo };
+      if (musicaTocando) ytPlayer.loadVideoById(arg); else ytPlayer.cueVideoById(arg);
+    } else {
+      if (Math.abs(posicaoAtual() - alvo) > 1.5) ytPlayer.seekTo(alvo, true);
+      if (musicaTocando) ytPlayer.playVideo(); else ytPlayer.pauseVideo();
+    }
+  } catch {}
+  destravarDepois();
+}
+
+function pararPlayer() {
+  if (!ytPronto) return;
+  aplicandoRemoto = true;
+  try { ytPlayer.stopVideo(); } catch {}
+  destravarDepois();
+}
+
+function receberMusica(msg) {
+  const idNovo = msg.video && msg.video.id;
+  const mudouFaixa = idNovo !== (musicaAtual && musicaAtual.id);
+  musicaAtual = msg.video || null;
+  musicaTocando = !!msg.tocando;
+  ultimoSync = { posicao: msg.posicao || 0, em: msg.em || Date.now() };
+  renderMusica();
+  if (!musicaAtual) return pararPlayer();
+  carregarYT();
+  if (ytPronto) aplicarEstadoMusica(mudouFaixa);   // senao o onReady aplica
+}
+
+function definirTocando(on) {
+  musicaTocando = on;
+  ultimoSync = { posicao: posicaoAtual(), em: Date.now() };
+  renderMusica();
+  enviarMusica();
+}
+
+function tocarFaixa(video) {
+  musicaAtual = video;
+  musicaTocando = true;
+  ultimoSync = { posicao: 0, em: Date.now() };
+  renderMusica();
+  carregarYT();
+  if (ytPronto) aplicarEstadoMusica(true);
+  enviarMusica();
+  $('musicResults').innerHTML = '';
+  $('musicQuery').value = '';
+}
+
+const ICO_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+const ICO_PAUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+
+function renderMusica() {
+  const tem = !!musicaAtual;
+  // A capa vem da miniatura da faixa, montada a partir do id — assim ela
+  // aparece tambem pra quem recebeu a musica pela sala, sem ter buscado.
+  const capa = $('musicArt');
+  if (tem) {
+    capa.src = 'https://i.ytimg.com/vi/' + musicaAtual.id + '/mqdefault.jpg';
+    capa.style.display = '';
+  } else {
+    capa.removeAttribute('src');
+    capa.style.display = 'none';
+  }
+  $('musicTitle').textContent = tem ? musicaAtual.titulo : 'Nada tocando';
+  $('musicTitle').title = tem ? musicaAtual.titulo : '';
+  $('musicChannel').textContent = tem ? musicaAtual.canal : 'Pesquise uma música aí embaixo';
+  $('btnMusicPlay').disabled = !tem;
+  $('btnMusicStop').disabled = !tem;
+  $('musicSeek').disabled = !tem;
+  $('btnMusicPlay').innerHTML = musicaTocando ? ICO_PAUSE : ICO_PLAY;
+  if (!tem) { $('musicSeek').value = 0; $('musicTime').textContent = '0:00'; }
+}
+
+// Quando o navegador recusa tocar sozinho (padrao no iPhone), a unica saida
+// e um toque explicito do usuario — e ele precisa chamar o play DENTRO do
+// proprio evento de toque, por isso o botao existe em vez de uma retentativa.
+let querendoTocarDesde = 0;
+
+function mostrarDesbloqueio(on) {
+  $('btnMusicUnlock').style.display = on ? 'block' : 'none';
+}
+
+$('btnMusicUnlock').addEventListener('click', () => {
+  mostrarDesbloqueio(false);
+  querendoTocarDesde = 0;
+  if (!ytPronto) return;
+  try { ytPlayer.setVolume(volumeMusica); ytPlayer.playVideo(); } catch {}
+});
+
+$('btnMusicPlay').addEventListener('click', () => definirTocando(!musicaTocando));
+
+$('btnMusicStop').addEventListener('click', () => {
+  musicaAtual = null; musicaTocando = false; ultimoSync = null;
+  renderMusica();
+  pararPlayer();
+  enviarMusica();
+});
+
+// Volume e pessoal: nao vai pra sala. Cada um acha um nivel diferente alto.
+$('musicVol').value = volumeMusica;
+$('musicVol').addEventListener('input', e => {
+  volumeMusica = Number(e.target.value);
+  localStorage.setItem('botTelaVolMusica', volumeMusica);
+  if (ytPronto) try { ytPlayer.setVolume(volumeMusica); } catch {}
+});
+
+$('musicSeek').addEventListener('input', () => { arrastandoSeek = true; });
+$('musicSeek').addEventListener('change', e => {
+  arrastandoSeek = false;
+  if (!ytPronto || !musicaAtual) return;
+  const alvo = Number(e.target.value);
+  aplicandoRemoto = true;
+  try { ytPlayer.seekTo(alvo, true); } catch {}
+  destravarDepois();
+  ultimoSync = { posicao: alvo, em: Date.now() };
+  enviarMusica();
+});
+
+$('musicForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('musicQuery').value.trim();
+  if (!q) return;
+  const caixa = $('musicResults');
+  caixa.innerHTML = '<div class="musicmsg">Buscando...</div>';
+  try {
+    const r = await fetch('/api/buscar-musica?q=' + encodeURIComponent(q) + '&t=' + encodeURIComponent(token));
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 503) {
+      caixa.innerHTML = '<div class="musicmsg">A busca precisa de uma <b>chave da API do YouTube</b>. ' +
+        'Crie o arquivo <b>youtube.txt</b> na pasta do projeto (ou defina <b>YOUTUBE_API_KEY</b> ' +
+        'no painel do servidor) e reinicie.</div>';
+      return;
+    }
+    if (!r.ok) throw new Error(d.erro || ('erro ' + r.status));
+    if (!d.itens || !d.itens.length) {
+      caixa.innerHTML = '<div class="musicmsg">Nada encontrado.</div>';
+      return;
+    }
+    caixa.innerHTML = '';
+    d.itens.forEach(it => {
+      const linha = document.createElement('div');
+      linha.className = 'mres';
+      const img = document.createElement('img');
+      img.src = it.capa; img.alt = '';
+      const txt = document.createElement('div');
+      const t = document.createElement('div'); t.className = 't'; t.textContent = it.titulo;
+      const c = document.createElement('div'); c.className = 'c'; c.textContent = it.canal;
+      txt.append(t, c);
+      linha.append(img, txt);
+      linha.addEventListener('click', () => tocarFaixa(it));
+      caixa.appendChild(linha);
+    });
+  } catch (err) {
+    caixa.innerHTML = '<div class="musicmsg">Não deu pra buscar: ' + err.message + '</div>';
+  }
+});
+
+// Relogio do player: move a barrinha e, de quebra, corrige a deriva. Cada
+// navegador toca por conta propria, entao com o tempo eles se afastam.
+setInterval(() => {
+  if (!ytPronto || !musicaAtual) return;
+  let dur = 0;
+  try { dur = ytPlayer.getDuration() || 0; } catch {}
+  const pos = posicaoAtual();
+  $('musicTime').textContent = mmss(pos);
+
+  // Deveria estar tocando e nao esta? Depois de 2s sem sair do lugar, o
+  // navegador barrou — oferece o toque manual.
+  let estado = -1;
+  try { estado = ytPlayer.getPlayerState(); } catch {}
+  const andando = estado === YT.PlayerState.PLAYING || estado === YT.PlayerState.BUFFERING;
+  if (musicaTocando && !andando) {
+    if (!querendoTocarDesde) querendoTocarDesde = Date.now();
+    if (Date.now() - querendoTocarDesde > 2000) mostrarDesbloqueio(true);
+  } else {
+    querendoTocarDesde = 0;
+    mostrarDesbloqueio(false);
+  }
+  if (!arrastandoSeek && dur > 0) {
+    $('musicSeek').max = dur;
+    $('musicSeek').value = Math.min(pos, dur);
+  }
+  if (musicaTocando && !aplicandoRemoto && !arrastandoSeek && dur > 0) {
+    const alvo = posicaoEsperada();
+    if (alvo < dur && Math.abs(pos - alvo) > 2) {
+      aplicandoRemoto = true;
+      try { ytPlayer.seekTo(alvo, true); } catch {}
+      destravarDepois();
+    }
+  }
+}, 500);
+
 $('meName').addEventListener('click', () => {
   const n = prompt('Seu nome:', myName);
   if (n && n.trim()) {
@@ -969,6 +1362,10 @@ async function boot() {
   $('meName').textContent = myName;
   $('roomBadge').textContent = '🔑 ' + ROOM;
   $('relayBadge').style.display = forcarRelay() ? '' : 'none';
+  // Deixa o player do YouTube pronto ANTES de alguem escolher musica: no
+  // iPhone so da pra comecar a tocar dentro do toque do usuario, e se o
+  // player nascer depois do toque esse direito ja expirou.
+  carregarYT();
   await Promise.all([loadIce(), obterLocalizacao()]);
   initPeer();
 }
@@ -1014,7 +1411,7 @@ function initPeer() {
     if (err.type === 'unavailable-id') {
       peerRetries++;
       if (peerRetries > 6) {
-        myPeerId = crypto.randomUUID();
+        myPeerId = novoId();
         sessionStorage.setItem('botTelaId', myPeerId);
         peerRetries = 0;
       }
@@ -1054,7 +1451,10 @@ function connectWS() {
     // Informa o estado ATUAL: numa reconexao, posso ja estar transmitindo.
     ws.send(JSON.stringify({
       type: 'join', room: ROOM, name: myName, peerId: myPeerId, token,
-      broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc
+      broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc,
+      // Levo junto a faixa que estou tocando: se o WebSocket caiu no momento
+      // em que eu escolhi a musica, e aqui que a sala fica sabendo dela.
+      musica: musicaAtual, musicaTocando, musicaPos: posicaoAtual()
     }));
     // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
     clearInterval(pingTimer);
@@ -1080,6 +1480,11 @@ function handleMsg(msg) {
 
   if (msg.type === 'chat') {
     adicionarMensagemChat(msg);
+    return;
+  }
+
+  if (msg.type === 'music') {
+    receberMusica(msg);
     return;
   }
 
@@ -2145,7 +2550,7 @@ function renderWatch() {
     msg.classList.add('on');
     msg.innerHTML = `<div class="big">🚫</div>
       <div class="t">Não consegui receber esta transmissão</div>
-      <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o 🔧 lá em cima para testar.</div>`;
+      <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o botão "Testar conexão" lá em cima para testar.</div>`;
   } else {
     msg.classList.add('on');
     msg.innerHTML = `<div class="big">⏳</div>
@@ -2329,7 +2734,7 @@ function renderGrid() {
   let pendente = false, ultimoX = -9999, ultimoY = -9999;
 
   function atualizarGlow(x, y) {
-    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #controls, .ctl button, .modal').forEach(card => {
+    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal').forEach(card => {
       const r = card.getBoundingClientRect();
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const foraDaBorda = Math.hypot(x - cx, y - cy) - Math.max(r.width, r.height) / 2;

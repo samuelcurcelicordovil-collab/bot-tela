@@ -10,3 +10,9 @@ npm-debug.log*
 senha.txt
 
 quedas.log
+
+# Chave da API do YouTube (busca de musica) — NUNCA subir para o Git
+youtube.txt
+
+# Configuracao local do editor/agente, nao e do projeto
+.claude/

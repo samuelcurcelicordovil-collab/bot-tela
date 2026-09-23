@@ -15,5 +15,7 @@ services:
         sync: false
       - key: TURN_CREDENTIAL
         sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false          # chave da busca de musica (Console do Google Cloud)
       - key: TURN_PORTS
         value: "3478"
