@@ -352,6 +352,21 @@
   .camoverlay.on { display: block; }
   .camoverlay.dragging { cursor: grabbing; border-color: #5865f2; }
   .camoverlay video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* O Safari desenha o proprio controle de play/pause em cima de <video>.
+     Nas cameras isso nao faz sentido nenhum: e transmissao ao vivo, nao tem
+     o que pausar, e o botao ainda tapa a imagem da pessoa. */
+  .camoverlay video::-webkit-media-controls,
+  .camoverlay video::-webkit-media-controls-panel,
+  .camoverlay video::-webkit-media-controls-start-playback-button,
+  .camoverlay video::-webkit-media-controls-play-button,
+  .camtile video::-webkit-media-controls,
+  .camtile video::-webkit-media-controls-panel,
+  .camtile video::-webkit-media-controls-start-playback-button,
+  .camtile video::-webkit-media-controls-play-button {
+    display: none !important;
+    -webkit-appearance: none;
+  }
   .camctl { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px;
             opacity: 0; transition: opacity .15s; }
   .camoverlay:hover .camctl { opacity: 1; }
@@ -2152,6 +2167,14 @@ function renderCamStrip() {
   });
 }
 
+// O Safari so esconde o botao de play se o video estiver realmente rodando.
+// Camera e stream local e muda, entao tocar e sempre seguro — mas o iOS as
+// vezes nao inicia sozinho quando o srcObject troca, e ai aparece o controle.
+function garantirTocando(v) {
+  const p = v.play();
+  if (p && p.catch) p.catch(() => {});
+}
+
 function mountCam(overlay, peerId) {
   const m = members.get(peerId);
   const stream = peerId === myPeerId ? myCam : camStreams.get(peerId);
@@ -2159,7 +2182,7 @@ function mountCam(overlay, peerId) {
   overlay.classList.toggle('on', has && !camPref.hidden);
   if (!has) return false;
   const v = overlay.querySelector('video');
-  if (v.srcObject !== stream) v.srcObject = stream;
+  if (v.srcObject !== stream) { v.srcObject = stream; garantirTocando(v); }
   wireCamOverlay(overlay);
   applyCamPref(overlay);
   return true;
@@ -2496,7 +2519,7 @@ function renderPeople() {
     const v = tile.querySelector('video');
     tile.classList.toggle('hascam', !!cam);
     v.classList.toggle('self', id === myPeerId);
-    if (cam && v.srcObject !== cam) v.srcObject = cam;
+    if (cam && v.srcObject !== cam) { v.srcObject = cam; garantirTocando(v); }
     if (!cam && v.srcObject) v.srcObject = null;
 
     tile.classList.toggle('live', !!m.broadcasting);
