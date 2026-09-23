@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="lol2-logo-branco.png">
 <link rel="apple-touch-icon" href="lol2-logo-branco.png">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="filtros.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -108,6 +109,19 @@
   }
 
   #peopleView, #watchView, #gridView { grid-column: 2; grid-row: 1 / -1; min-width: 0; }
+
+  /* ---------- FILTROS DE CAMERA ---------- */
+  #filtroStrip {
+    display: none; gap: 6px; padding: 10px 18px 0; flex: none;
+    overflow-x: auto; scrollbar-width: thin;
+  }
+  #filtroStrip.on { display: flex; }
+  .filtrochip {
+    flex: none; padding: 6px 13px; font-size: .78rem; border-radius: 999px;
+    background: #2b2d31; color: #c9cdd3; border: 1px solid #3f4147;
+  }
+  .filtrochip:hover { background: #3a3d43; color: #fff; }
+  .filtrochip.sel { background: #5865f2; border-color: #5865f2; color: #fff; }
 
   /* ---------- MUSICA DA SALA ---------- */
   #musicPanel {
@@ -588,6 +602,8 @@
 
     <div id="gridView"></div>
   </div>
+
+  <div id="filtroStrip"></div>
 
   <div id="controls">
     <div class="ctl">
@@ -1986,20 +2002,104 @@ async function trocarTela() {
 // ============================================================
 // Câmera — independente da transmissão, como no Discord
 // ============================================================
+// ============================================================
+// FILTROS DE CAMERA
+//
+// O filtro precisa ser aplicado ANTES de enviar, senao so quem ligou a
+// camera veria o efeito. Entao a camera crua vai para um <video> escondido,
+// o shader desenha num canvas, e o que a sala recebe e o captureStream()
+// desse canvas.
+//
+// Trocar de filtro nao mexe na transmissao: muda so os parametros mandados
+// ao shader, e o track continua o mesmo. Ninguem pisca.
+// ============================================================
+let camBruta = null;       // stream original, guardado para poder desligar
+let camFonte = null;       // <video> escondido que recebe a camera crua
+let camCanvas = null;
+let camRenderer = null;
+let camLoop = 0;
+let camUltimoQuadro = 0;
+let filtroAtual = localStorage.getItem('botTelaFiltro') || 'normal';
+
+function filtroEscolhido() {
+  const F = window.FiltrosCam;
+  return (F && (F.FILTER_BY_ID[filtroAtual] || F.FILTER_BY_ID.normal)) || null;
+}
+
+function desenharCam() {
+  camLoop = requestAnimationFrame(desenharCam);
+  if (!camRenderer || !camFonte || camFonte.readyState < 2) return;
+  const filtro = filtroEscolhido();
+  if (!filtro) return;
+  const agora = performance.now();
+  // Alguns looks tem taxa de quadros propria (Game Boy, cinema mudo). Isso e
+  // parte do visual, nao economia de processamento.
+  if (filtro.holdMs && agora - camUltimoQuadro < filtro.holdMs) return;
+  camUltimoQuadro = agora;
+  camRenderer.upload(camFonte, camFonte.videoWidth, camFonte.videoHeight);
+  // mirror fica falso: o espelhamento do proprio rosto e so na exibicao (CSS),
+  // os outros precisam ver a imagem na orientacao real.
+  camRenderer.draw(filtro, { time: agora / 1000, mix: 1, mirror: false });
+}
+
+function montarTiraFiltros() {
+  const tira = $('filtroStrip');
+  if (!window.FiltrosCam || tira.children.length) return;
+  window.FiltrosCam.FILTERS.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'filtrochip' + (f.id === filtroAtual ? ' sel' : '');
+    b.textContent = f.name;
+    b.addEventListener('click', () => {
+      filtroAtual = f.id;
+      localStorage.setItem('botTelaFiltro', f.id);
+      tira.querySelectorAll('.filtrochip').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel');
+    });
+    tira.appendChild(b);
+  });
+}
+
 $('btnCam').addEventListener('click', async () => {
   if (myCam) return stopCam();
   try {
-    myCam = await navigator.mediaDevices.getUserMedia({
+    camBruta = await navigator.mediaDevices.getUserMedia({
       video: { width: 424, height: 320, frameRate: 24 },
       audio: false
     });
-    myCam.getVideoTracks()[0].addEventListener('ended', stopCam);
+
+    // Sem WebGL (ou sem o arquivo dos filtros) o site nao pode ficar sem
+    // camera: manda a imagem crua e segue a vida.
+    camFonte = document.createElement('video');
+    camFonte.playsInline = true; camFonte.muted = true; camFonte.autoplay = true;
+    camFonte.srcObject = camBruta;
+    try { await camFonte.play(); } catch {}
+
+    camCanvas = document.createElement('canvas');
+    camCanvas.width = 424; camCanvas.height = 320;
+    camRenderer = window.FiltrosCam ? window.FiltrosCam.createFilterRenderer(camCanvas) : null;
+
+    if (camRenderer) {
+      camUltimoQuadro = 0;
+      desenharCam();
+      myCam = camCanvas.captureStream(24);
+      montarTiraFiltros();
+      $('filtroStrip').classList.add('on');
+    } else {
+      myCam = camBruta;
+      camFonte = null; camCanvas = null;
+    }
+
+    // O aviso de "camera desligada" vem do aparelho, entao escuta no track
+    // ORIGINAL: o track do canvas nunca termina sozinho.
+    camBruta.getVideoTracks()[0].addEventListener('ended', stopCam);
     const me = members.get(myPeerId);
     if (me) me.camOn = true;
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cam-state', on: true }));
     members.forEach((_, id) => callPeerCam(id));
     render();
   } catch (err) {
+    if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
+    camFonte = null; camCanvas = null; camRenderer = null;
     alert('Não consegui acessar a câmera: ' + err.message);
   }
 });
@@ -2010,6 +2110,14 @@ function stopCam() {
   outgoingCam.clear();
   myCam.getTracks().forEach(t => t.stop());
   myCam = null;
+
+  // Parar so o track do canvas deixaria a luz da camera acesa: o aparelho
+  // esta preso ao stream bruto, que e outro objeto.
+  if (camLoop) { cancelAnimationFrame(camLoop); camLoop = 0; }
+  if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
+  if (camFonte) { camFonte.srcObject = null; camFonte = null; }
+  camCanvas = null; camRenderer = null;
+  $('filtroStrip').classList.remove('on');
   const me = members.get(myPeerId);
   if (me) me.camOn = false;
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cam-state', on: false }));
