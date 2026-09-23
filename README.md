@@ -16,6 +16,8 @@ O vídeo vai **direto de um usuário para o outro (P2P, via WebRTC)**. O servido
 - 📊 **Limite de 720p** priorizando fluidez, com estatísticas de envio
 - 🔊 **Controle de volume** de cada transmissão
 - 📹 **Câmera** opcional, em uma faixa de vídeo separada da tela
+- 🎨 **Filtros de câmera**: 12 visuais (Vintage 70, Polaroid, VHS, Noir, Game Boy, Cinema mudo e outros) num único shader WebGL
+- ✋ **Efeitos de mão**: gestos reconhecidos pela câmera disparam efeitos (aurora, mosaico, contorno, linhas, triângulos), com rastro dos dedos e estilingue
 - 🎵 **Música sincronizada**: pesquise uma faixa e toda a sala ouve junto, no mesmo segundo. Quem entra no meio cai no ponto certo da música
 - 💬 **Chat da sala**, com suporte a links de imagem e GIF
 - ⛶ **Tela cheia** e ⧉ **Picture-in-Picture** (a janela fica por cima dos outros programas)
@@ -106,6 +108,8 @@ O arquivo `render.yaml` já deixa tudo configurado. Basta conectar o repositóri
 bot-tela/
 ├── public/
 │   ├── index.html          # Interface completa (HTML, CSS e JS do cliente)
+│   ├── filtros.js          # Shader WebGL dos filtros de câmera
+│   ├── gestos.js           # Reconhecimento de gestos e efeitos de mão
 │   └── lol2-logo*.png      # Logos
 ├── server.js               # Servidor: API, salas, WebSocket, PeerJS e TURN
 ├── iniciar.bat             # Atalho para rodar no Windows com ngrok
@@ -113,6 +117,24 @@ bot-tela/
 ├── turn.example.json       # Modelo de configuração do TURN
 └── package.json            # Dependências e scripts
 ```
+
+## 🎨 Filtros e efeitos de câmera
+
+Os dois são aplicados **antes do envio**: a câmera crua passa por um shader WebGL,
+o resultado vai para um canvas de composição e é esse canvas que vira a transmissão.
+Se fossem aplicados só na exibição, apenas quem ligou a câmera veria o efeito.
+
+**Filtros** aparecem numa tira acima da barra de baixo quando a câmera está ligada.
+Trocar de filtro não mexe na transmissão — muda só os parâmetros enviados ao
+shader, então ninguém pisca.
+
+**Efeitos de mão** ficam atrás do botão *Gestos*, separado de propósito: na
+primeira vez eles baixam cerca de **18 MB** (modelo de 8,4 MB e WASM de 9,6 MB do
+MediaPipe) e rodam detecção quadro a quadro. Por isso são **só no computador** —
+no celular o botão nem aparece.
+
+> Câmera exige contexto seguro. Funciona em `localhost`, por HTTPS (Render, ngrok),
+> mas **não** pelo IP da rede local em `http://`.
 
 ## 🧠 Como funciona
 
