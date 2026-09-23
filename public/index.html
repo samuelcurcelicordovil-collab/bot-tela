@@ -8,6 +8,7 @@
 <link rel="apple-touch-icon" href="lol2-logo-branco.png">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="filtros.js"></script>
+<script src="gestos.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -110,6 +111,15 @@
 
   #peopleView, #watchView, #gridView { grid-column: 2; grid-row: 1 / -1; min-width: 0; }
 
+  /* ---------- GESTOS ---------- */
+  #gestoTag {
+    display: none; align-items: center; gap: 6px; margin-left: 8px;
+    padding: 4px 10px; border-radius: 999px; font-size: .74rem;
+    background: #2b2d31; border: 1px solid #3f4147; color: #9aa0a6;
+  }
+  #gestoTag.on { display: inline-flex; }
+  #gestoTag b { color: #77d99a; font-weight: 700; }
+
   /* ---------- FILTROS DE CAMERA ---------- */
   #filtroStrip {
     display: none; gap: 6px; padding: 10px 18px 0; flex: none;
@@ -201,6 +211,8 @@
     #stage { display: flex; flex-direction: column; }
     #peopleView, #watchView, #gridView, #chatPanel, #musicPanel { width: 100%; }
     #musicPanel { order: 3; flex: none; }
+    /* Gestos exigem ~18 MB e deteccao quadro a quadro: so no computador. */
+    #ctlGestos { display: none; }
     #chatPanel { order: 4; height: 320px; min-height: 0; }
   }
 
@@ -604,6 +616,7 @@
   </div>
 
   <div id="filtroStrip"></div>
+  <div id="gestoTag"></div>
 
   <div id="controls">
     <div class="ctl">
@@ -617,6 +630,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
       </button>
       <span class="lbl" id="shareLbl">Transmitir</span>
+    </div>
+    <div class="ctl" id="ctlGestos">
+      <button id="btnGestos" title="Efeitos de mão (usa a câmera)" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v14M11 4v16M16 4v16M21 8v12"/></svg>
+      </button>
+      <span class="lbl" id="gestosLbl">Gestos</span>
     </div>
     <div class="ctl">
       <button id="btnGrid" title="Ver todas as transmissões" disabled>
@@ -2015,11 +2034,17 @@ async function trocarTela() {
 // ============================================================
 let camBruta = null;       // stream original, guardado para poder desligar
 let camFonte = null;       // <video> escondido que recebe a camera crua
-let camCanvas = null;
+let camCanvas = null;      // canvas do shader
 let camRenderer = null;
+let camSaida = null;       // canvas final, o que vira o stream
+let camSaidaCtx = null;
 let camLoop = 0;
 let camUltimoQuadro = 0;
 let filtroAtual = localStorage.getItem('botTelaFiltro') || 'normal';
+
+// Gestos: desligado por padrao porque baixa ~18 MB na primeira vez.
+let gestosLigados = false;
+let gestosCarregando = false;
 
 function filtroEscolhido() {
   const F = window.FiltrosCam;
@@ -2036,11 +2061,60 @@ function desenharCam() {
   // parte do visual, nao economia de processamento.
   if (filtro.holdMs && agora - camUltimoQuadro < filtro.holdMs) return;
   camUltimoQuadro = agora;
+
+  if (gestosLigados && window.GestosCam) GestosCam.processar(agora);
+
+  // O gesto ativo pode alterar a cor. Como o filtro escolhido tambem mexe nos
+  // mesmos parametros, o gesto entra por cima: ele e momentaneo, o filtro e a
+  // base. Os dois saem do mesmo shader, numa passada so.
+  const doGesto = (gestosLigados && window.GestosCam) ? GestosCam.parametrosShader() : null;
+  const usado = doGesto ? { ...filtro, p: { ...filtro.p, ...doGesto } } : filtro;
+
   camRenderer.upload(camFonte, camFonte.videoWidth, camFonte.videoHeight);
   // mirror fica falso: o espelhamento do proprio rosto e so na exibicao (CSS),
   // os outros precisam ver a imagem na orientacao real.
-  camRenderer.draw(filtro, { time: agora / 1000, mix: 1, mirror: false });
+  camRenderer.draw(usado, { time: agora / 1000, mix: 1, mirror: false });
+
+  // O canvas de saida e o que virou stream. Sem gestos ele so copia o shader;
+  // com gestos, o modulo compoe as camadas de efeito e de desenho.
+  if (!camSaidaCtx) return;
+  if (gestosLigados && window.GestosCam) GestosCam.desenhar(camSaidaCtx, agora);
+  else camSaidaCtx.drawImage(camCanvas, 0, 0, camSaida.width, camSaida.height);
 }
+
+function mostrarGesto(vivo) {
+  const tag = $('gestoTag');
+  tag.classList.toggle('on', gestosLigados);
+  tag.innerHTML = gestosLigados
+    ? ('Gesto: <b>' + (vivo ? vivo.effect : 'nenhum') + '</b>')
+    : '';
+}
+
+$('btnGestos').addEventListener('click', async () => {
+  if (!myCam || !camRenderer || gestosCarregando) return;
+  if (gestosLigados) {
+    gestosLigados = false;
+    GestosCam.parar();
+    $('gestosLbl').textContent = 'Gestos';
+    $('btnGestos').classList.remove('ativo');
+    mostrarGesto(null);
+    return;
+  }
+  gestosCarregando = true;
+  $('gestosLbl').textContent = 'Baixando...';
+  try {
+    await GestosCam.iniciar({ video: camFonte, base: camCanvas, aoMudarGesto: mostrarGesto });
+    gestosLigados = true;
+    $('gestosLbl').textContent = 'Gestos ✓';
+    $('btnGestos').classList.add('ativo');
+    mostrarGesto(null);
+  } catch (err) {
+    $('gestosLbl').textContent = 'Gestos';
+    alert('Não consegui carregar os efeitos de mão: ' + (err && err.message || err));
+  } finally {
+    gestosCarregando = false;
+  }
+});
 
 function montarTiraFiltros() {
   const tira = $('filtroStrip');
@@ -2079,11 +2153,17 @@ $('btnCam').addEventListener('click', async () => {
     camRenderer = window.FiltrosCam ? window.FiltrosCam.createFilterRenderer(camCanvas) : null;
 
     if (camRenderer) {
+      camSaida = document.createElement('canvas');
+      camSaida.width = 424; camSaida.height = 320;
+      camSaidaCtx = camSaida.getContext('2d');
       camUltimoQuadro = 0;
       desenharCam();
-      myCam = camCanvas.captureStream(24);
+      // O stream sai do canvas de COMPOSICAO, nao do shader: e nele que os
+      // efeitos de mao sao desenhados por cima.
+      myCam = camSaida.captureStream(24);
       montarTiraFiltros();
       $('filtroStrip').classList.add('on');
+      $('btnGestos').disabled = false;
     } else {
       myCam = camBruta;
       camFonte = null; camCanvas = null;
@@ -2113,6 +2193,12 @@ function stopCam() {
 
   // Parar so o track do canvas deixaria a luz da camera acesa: o aparelho
   // esta preso ao stream bruto, que e outro objeto.
+  if (gestosLigados && window.GestosCam) { GestosCam.parar(); gestosLigados = false; }
+  $('btnGestos').disabled = true;
+  $('gestosLbl').textContent = 'Gestos';
+  $('btnGestos').classList.remove('ativo');
+  mostrarGesto(null);
+  camSaida = null; camSaidaCtx = null;
   if (camLoop) { cancelAnimationFrame(camLoop); camLoop = 0; }
   if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
   if (camFonte) { camFonte.srcObject = null; camFonte = null; }
