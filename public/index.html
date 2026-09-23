@@ -617,6 +617,7 @@
 
   <div id="filtroStrip"></div>
   <div id="gestoTag"></div>
+  <button id="btnScanlines" class="filtrochip" style="display:none">Linhas de varredura</button>
 
   <div id="controls">
     <div class="ctl">
@@ -2080,6 +2081,8 @@ function desenharCam() {
   if (!camSaidaCtx) return;
   if (gestosLigados && window.GestosCam) GestosCam.desenhar(camSaidaCtx, agora);
   else camSaidaCtx.drawImage(camCanvas, 0, 0, camSaida.width, camSaida.height);
+  // A textura nao depende de deteccao de mao, entao entra nos dois caminhos.
+  if (window.GestosCam) GestosCam.desenharScanlines(camSaidaCtx, camSaida.width, camSaida.height);
 }
 
 function mostrarGesto(vivo) {
@@ -2089,6 +2092,16 @@ function mostrarGesto(vivo) {
     ? ('Gesto: <b>' + (vivo ? vivo.effect : 'nenhum') + '</b>')
     : '';
 }
+
+// As linhas de varredura sao desenhadas na composicao, sem deteccao de mao,
+// entao o botao funciona mesmo com os gestos desligados — e sem baixar os
+// 18 MB do MediaPipe.
+$('btnScanlines').addEventListener('click', () => {
+  if (!window.GestosCam) return;
+  const novo = !GestosCam.estaLigado('scanlines');
+  GestosCam.ligar('scanlines', novo);
+  $('btnScanlines').classList.toggle('sel', novo);
+});
 
 $('btnGestos').addEventListener('click', async () => {
   if (!myCam || !camRenderer || gestosCarregando) return;
@@ -2164,6 +2177,7 @@ $('btnCam').addEventListener('click', async () => {
       montarTiraFiltros();
       $('filtroStrip').classList.add('on');
       $('btnGestos').disabled = false;
+      $('btnScanlines').style.display = '';
     } else {
       myCam = camBruta;
       camFonte = null; camCanvas = null;
@@ -2198,6 +2212,7 @@ function stopCam() {
   $('gestosLbl').textContent = 'Gestos';
   $('btnGestos').classList.remove('ativo');
   mostrarGesto(null);
+  $('btnScanlines').style.display = 'none';
   camSaida = null; camSaidaCtx = null;
   if (camLoop) { cancelAnimationFrame(camLoop); camLoop = 0; }
   if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }

@@ -73,7 +73,9 @@
   function drawSource(c, W, H){ if (base) c.drawImage(base, 0, 0, W, H); }
 
   // Cada efeito pode ser desligado individualmente.
-  const ligados = {};
+  // 'scanlines' comeca desligado porque e textura permanente, nao reacao a
+  // gesto: ligado sem querer, sujaria a imagem o tempo todo.
+  const ligados = { scanlines: false };
   const isOn = id => ligados[id] !== false;
 
   let aoMudarGesto = null;
@@ -812,6 +814,18 @@
 
   // Compoe tudo no canvas que vai virar o stream: a imagem (ja filtrada, ou
   // substituida pela camada de efeito) e por cima os desenhos.
+  // Faixas claras de 1px a cada 3px, iguais ao repeating-linear-gradient do
+  // prototipo. 'overlay' escurece o escuro e clareia o claro — e o que dava a
+  // aparencia de tubo de TV.
+  function desenharScanlines(ctx, w, h) {
+    if (!isOn('scanlines')) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = 'rgba(255,255,255,0.035)';
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    ctx.restore();
+  }
+
   function desenhar(ctx, agora) {
     renderFx(agora);
     renderOverlay(agora);
@@ -847,7 +861,7 @@
 
   global.GestosCam = {
     GESTURES,
-    iniciar, processar, desenhar, parametrosShader, parar,
+    iniciar, processar, desenhar, desenharScanlines, parametrosShader, parar,
     gestoAtual: () => currentGesture,
     ligar: (id, v) => { ligados[id] = v; applyEffect(); },
     estaLigado: isOn
