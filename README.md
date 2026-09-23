@@ -16,6 +16,7 @@ O vídeo vai **direto de um usuário para o outro (P2P, via WebRTC)**. O servido
 - 📊 **Limite de 720p** priorizando fluidez, com estatísticas de envio
 - 🔊 **Controle de volume** de cada transmissão
 - 📹 **Câmera** opcional, em uma faixa de vídeo separada da tela
+- 🎵 **Música sincronizada**: pesquise uma faixa e toda a sala ouve junto, no mesmo segundo. Quem entra no meio cai no ponto certo da música
 - 💬 **Chat da sala**, com suporte a links de imagem e GIF
 - ⛶ **Tela cheia** e ⧉ **Picture-in-Picture** (a janela fica por cima dos outros programas)
 - 🗺️ **Mapa-mundi pontilhado** mostrando de onde cada pessoa da sala está (localização aproximada por IP)
@@ -35,6 +36,7 @@ O vídeo vai **direto de um usuário para o outro (P2P, via WebRTC)**. O servido
 - **HTML, CSS e JavaScript** puros
 - **WebRTC** (`getDisplayMedia` e `getUserMedia`) para capturar e transmitir a tela e a câmera
 - **PeerJS** para as conexões P2P
+- **YouTube IFrame Player API** para a música da sala
 
 **Infraestrutura**
 - **STUN/TURN** para funcionar em redes restritivas (4G, rede corporativa)
@@ -62,11 +64,24 @@ O vídeo vai **direto de um usuário para o outro (P2P, via WebRTC)**. O servido
    ```
 4. *(Opcional)* Crie um arquivo `senha.txt` com a senha de entrada. Sem ele, o site fica aberto.
 5. *(Opcional)* Copie `turn.example.json` para `turn.json` e preencha os dados do seu servidor TURN.
-6. Inicie o servidor:
+6. *(Opcional)* Crie um arquivo `youtube.txt` com a chave da API do YouTube, para habilitar a busca de músicas. Veja abaixo como obtê-la. Sem ela o resto do site funciona normalmente — só a busca fica indisponível.
+7. Inicie o servidor:
    ```bash
    npm start
    ```
-7. Abra **http://localhost:3000** no navegador.
+8. Abra **http://localhost:3000** no navegador.
+
+### Chave da API do YouTube
+A busca de músicas usa a YouTube Data API v3. A chave é gratuita:
+
+1. Crie um projeto no [Google Cloud Console](https://console.cloud.google.com/projectcreate)
+2. Ative a [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com)
+3. Em [Credenciais](https://console.cloud.google.com/apis/credentials), crie uma **Chave de API** (escolha *Public data*)
+4. Cole a chave — e nada além dela — no arquivo `youtube.txt`
+
+A chave nunca vai para o navegador: a busca passa pelo endpoint `/api/buscar-musica` do servidor. Se ela ficasse no cliente, qualquer pessoa poderia copiá-la e gastar a cota.
+
+> A cota gratuita é de 10.000 unidades por dia e cada busca custa 100, ou seja, cerca de **100 buscas diárias** somando todo mundo. Passando disso, a busca volta erro até o dia seguinte.
 
 ### Atalho no Windows
 Dê dois cliques no **`iniciar.bat`**. Ele instala as dependências (na primeira vez), sobe o servidor e abre um túnel do **ngrok**. Depois é só mandar o link `https://xxxx.ngrok-free.app` para os seus amigos.
@@ -81,8 +96,9 @@ O arquivo `render.yaml` já deixa tudo configurado. Basta conectar o repositóri
 | `TURN_USERNAME` | Usuário do TURN |
 | `TURN_CREDENTIAL` | Senha do TURN |
 | `TURN_PORTS` | Portas do TURN (padrão: `3478`) |
+| `YOUTUBE_API_KEY` | Chave da API do YouTube, para a busca de músicas |
 
-> ⚠️ Os arquivos `senha.txt` e `turn.json` guardam segredos e estão no `.gitignore`. Nunca suba eles para o GitHub.
+> ⚠️ Os arquivos `senha.txt`, `turn.json` e `youtube.txt` guardam segredos e estão no `.gitignore`. Nunca suba eles para o GitHub.
 
 ## 📂 Estrutura de pastas
 
