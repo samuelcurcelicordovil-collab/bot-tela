@@ -6,9 +6,12 @@
 <title>Bot Tela - LOL 2</title>
 <link rel="icon" type="image/png" href="lol2-logo-branco.png">
 <link rel="apple-touch-icon" href="lol2-logo-branco.png">
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="filtros.js"></script>
-<script src="gestos.js"></script>
+<!-- defer: baixam em paralelo e rodam depois da pagina montada, sem segurar
+     a tela de entrada enquanto o CDN responde. Nada do script principal usa
+     estes arquivos antes de a pessoa clicar em alguma coisa. -->
+<script id="peerjsScript" src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
+<script src="filtros.js" defer></script>
+<script src="gestos.js" defer></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -963,6 +966,16 @@ function saveCamPref() { localStorage.setItem('botTelaCam', JSON.stringify(camPr
 
 const $ = id => document.getElementById(id);
 
+// O peerjs carrega com defer. Se o CDN estiver lento e a pessoa entrar na
+// sala antes dele chegar, o boot espera aqui em vez de estourar no new Peer.
+const peerjsPronto = new Promise(resolve => {
+  if (window.Peer) return resolve();
+  const tag = document.getElementById('peerjsScript');
+  if (!tag) return resolve();
+  tag.addEventListener('load', resolve, { once: true });
+  tag.addEventListener('error', resolve, { once: true });
+});
+
 // ============================================================
 // Entrada: nome uma vez, depois direto pra sala
 // ============================================================
@@ -1195,15 +1208,15 @@ function criarPlayer() {
         try { ytPlayer.setVolume(volumeMusica); } catch {}
         if (musicaAtual) aplicarEstadoMusica(true);
       },
-      // O proprio player tambem avisa quando a faixa acaba — nao da pra
-      // confiar so nos nossos botoes.
+      // Do player so aproveitamos o FIM da faixa. O quadro do YouTube fica
+      // fora da tela e sem controles, entao pausa/play vindos dele nao sao do
+      // usuario: sao o navegador barrando o autoplay, ou a tecla de midia do
+      // teclado. Repassar isso para a sala deixava um unico ouvinte com o
+      // autoplay bloqueado pausar a musica de todo mundo. Nesses casos quem
+      // resolve e o botao "Toque para ouvir", so para aquela pessoa.
       onStateChange: (e) => {
         if (aplicandoRemoto) return;
-        // Aqui a ordem veio do proprio player, entao ele ja esta no estado
-        // certo: avisamos a sala sem mandar o player fazer de novo.
-        if (e.data === YT.PlayerState.ENDED) return definirTocando(false, true);
-        if (e.data === YT.PlayerState.PLAYING && !musicaTocando) definirTocando(true, true);
-        if (e.data === YT.PlayerState.PAUSED && musicaTocando) definirTocando(false, true);
+        if (e.data === YT.PlayerState.ENDED) definirTocando(false, true);
       }
     }
   });
@@ -1222,10 +1235,13 @@ function posicaoEsperada() {
   return Math.max(0, ultimoSync.posicao + decorrido);
 }
 
+// Manda a posicao da NOSSA referencia (ultimoSync), nao a que o player
+// informa: logo depois de um loadVideoById o player ainda devolve o tempo da
+// faixa ANTERIOR, e a sala inteira pulava a musica nova para aquele ponto.
 function enviarMusica() {
   if (!ws || ws.readyState !== ws.OPEN) return;
   ws.send(JSON.stringify({
-    type: 'music', video: musicaAtual, tocando: musicaTocando, posicao: posicaoAtual()
+    type: 'music', video: musicaAtual, tocando: musicaTocando, posicao: posicaoEsperada()
   }));
 }
 
@@ -1257,7 +1273,10 @@ function receberMusica(msg) {
   const mudouFaixa = idNovo !== (musicaAtual && musicaAtual.id);
   musicaAtual = msg.video || null;
   musicaTocando = !!msg.tocando;
-  ultimoSync = { posicao: msg.posicao || 0, em: msg.em || Date.now() };
+  // O servidor ja manda a posicao adiantada ate o momento do envio, entao a
+  // referencia de tempo e o NOSSO relogio, na chegada. Usar o horario do
+  // servidor deixava quem tem o relogio do PC desacertado fora de sincronia.
+  ultimoSync = { posicao: msg.posicao || 0, em: Date.now() };
   renderMusica();
   if (!musicaAtual) return pararPlayer();
   carregarYT();
@@ -1444,19 +1463,45 @@ $('meName').addEventListener('click', () => {
   }
 });
 
+// Os dialogos fechados ficam so transparentes (opacity 0), nao somem: da pra
+// chegar no campo de nome com Tab e apertar Enter depois de ja estar na sala.
+// Sem esta trava isso rodava o boot de novo, abria uma segunda conexao e
+// deixava um membro fantasma na sala.
+let jaEntrou = false;
+
 async function boot() {
+  if (jaEntrou) return;
+  jaEntrou = true;
   mostrarSparkles = false;
   $('app').style.display = 'flex';
   $('meName').textContent = myName;
   $('roomBadge').textContent = '🔑 ' + ROOM;
   $('relayBadge').style.display = forcarRelay() ? '' : 'none';
-  // Deixa o player do YouTube pronto ANTES de alguem escolher musica: no
-  // iPhone so da pra comecar a tocar dentro do toque do usuario, e se o
-  // player nascer depois do toque esse direito ja expirou.
-  carregarYT();
-  await Promise.all([loadIce(), obterLocalizacao()]);
+  // A localizacao so serve para o ponto no mapa do fundo: nao segura a
+  // entrada na sala. Antes o boot esperava o ipapi.co (ate 4s quando lento)
+  // antes de sequer abrir a conexao. Chegando depois, vai numa mensagem
+  // propria que o servidor ja entende.
+  obterLocalizacao().then(enviarLocalizacao);
+  await Promise.all([loadIce(), peerjsPronto]);
   initPeer();
 }
+
+function enviarLocalizacao(loc) {
+  if (!loc) return;
+  const eu = members.get(myPeerId);
+  if (eu) eu.loc = loc;
+  // Se o WebSocket ainda nao abriu, o proprio join ja leva minhaLoc.
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'location', loc }));
+  atualizarMapa();
+}
+
+// O player do YouTube (~1 MB de scripts e um iframe) so e montado quando a
+// pessoa encosta no painel de musica — ou quando a sala ja esta tocando algo,
+// pelo receberMusica. Montar no primeiro toque no painel ainda chega a tempo
+// para o iPhone: o player fica pronto enquanto a pessoa digita a busca, e o
+// play sai dentro do toque no resultado.
+['pointerdown', 'focusin'].forEach(ev =>
+  $('musicPanel').addEventListener(ev, carregarYT, { once: true }));
 
 // ============================================================
 // PeerJS com reconexao
@@ -1542,7 +1587,7 @@ function connectWS() {
       broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc,
       // Levo junto a faixa que estou tocando: se o WebSocket caiu no momento
       // em que eu escolhi a musica, e aqui que a sala fica sabendo dela.
-      musica: musicaAtual, musicaTocando, musicaPos: posicaoAtual()
+      musica: musicaAtual, musicaTocando, musicaPos: posicaoEsperada()
     }));
     // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
     clearInterval(pingTimer);
@@ -2127,21 +2172,39 @@ function desenharCam() {
   // O gesto ativo pode alterar a cor. Como o filtro escolhido tambem mexe nos
   // mesmos parametros, o gesto entra por cima: ele e momentaneo, o filtro e a
   // base. Os dois saem do mesmo shader, numa passada so.
-  const doGesto = (gestosLigados && window.GestosCam) ? GestosCam.parametrosShader() : null;
-  const usado = doGesto ? { ...filtro, p: { ...filtro.p, ...doGesto } } : filtro;
-
-  camRenderer.upload(camFonte, camFonte.videoWidth, camFonte.videoHeight);
-  // mirror fica falso: o espelhamento do proprio rosto e so na exibicao (CSS),
-  // os outros precisam ver a imagem na orientacao real.
-  camRenderer.draw(usado, { time: agora / 1000, mix: 1, mirror: false });
-
-  // O canvas de saida e o que virou stream. Sem gestos ele so copia o shader;
-  // com gestos, o modulo compoe as camadas de efeito e de desenho.
   if (!camSaidaCtx) return;
-  if (gestosLigados && window.GestosCam) GestosCam.desenhar(camSaidaCtx, agora);
-  else camSaidaCtx.drawImage(camCanvas, 0, 0, camSaida.width, camSaida.height);
+
+  // Filtro Normal sem gesto: o shader nao mudaria nada na imagem. Copia a
+  // camera direto no canvas de saida e economiza, 24 vezes por segundo, o
+  // envio da textura, a passada do shader e a copia do resultado. E o caso
+  // da maioria, que nunca escolhe filtro.
+  if (filtro.id === 'normal' && !gestosLigados) {
+    desenharCobrindo(camSaidaCtx, camFonte, camSaida.width, camSaida.height);
+  } else {
+    const doGesto = (gestosLigados && window.GestosCam) ? GestosCam.parametrosShader() : null;
+    const usado = doGesto ? { ...filtro, p: { ...filtro.p, ...doGesto } } : filtro;
+
+    camRenderer.upload(camFonte, camFonte.videoWidth, camFonte.videoHeight);
+    // mirror fica falso: o espelhamento do proprio rosto e so na exibicao (CSS),
+    // os outros precisam ver a imagem na orientacao real.
+    camRenderer.draw(usado, { time: agora / 1000, mix: 1, mirror: false });
+
+    // O canvas de saida e o que virou stream. Sem gestos ele so copia o shader;
+    // com gestos, o modulo compoe as camadas de efeito e de desenho.
+    if (gestosLigados && window.GestosCam) GestosCam.desenhar(camSaidaCtx, agora);
+    else camSaidaCtx.drawImage(camCanvas, 0, 0, camSaida.width, camSaida.height);
+  }
   // A textura nao depende de deteccao de mao, entao entra nos dois caminhos.
   if (window.GestosCam) GestosCam.desenharScanlines(camSaidaCtx, camSaida.width, camSaida.height);
+}
+
+// Mesmo recorte que o shader faz (object-fit: cover), para o caminho sem
+// filtro sair identico ao filtrado quando a camera nao entrega 424x320.
+function desenharCobrindo(ctx, v, W, H) {
+  const vw = v.videoWidth || W, vh = v.videoHeight || H;
+  const escala = Math.max(W / vw, H / vh);
+  const w = vw * escala, h = vh * escala;
+  ctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h);
 }
 
 function mostrarGesto(vivo) {
@@ -2183,7 +2246,7 @@ $('btnScanlines').addEventListener('click', () => {
 });
 
 $('btnGestos').addEventListener('click', async () => {
-  if (!myCam || !camRenderer || gestosCarregando) return;
+  if (!myCam || !camSaida || gestosCarregando) return;
   if (gestosLigados) {
     gestosLigados = false;
     GestosCam.parar();
@@ -2225,8 +2288,14 @@ function montarTiraFiltros() {
   });
 }
 
+// Enquanto o navegador espera a permissao, myCam ainda e nulo: sem esta trava
+// um segundo clique abria OUTRA captura e a primeira ficava ligada para sempre.
+let ligandoCam = false;
+
 $('btnCam').addEventListener('click', async () => {
   if (myCam) return stopCam();
+  if (ligandoCam) return;
+  ligandoCam = true;
   try {
     camBruta = await navigator.mediaDevices.getUserMedia({
       video: { width: 424, height: 320, frameRate: 24 },
@@ -2240,9 +2309,16 @@ $('btnCam').addEventListener('click', async () => {
     camFonte.srcObject = camBruta;
     try { await camFonte.play(); } catch {}
 
-    camCanvas = document.createElement('canvas');
-    camCanvas.width = 424; camCanvas.height = 320;
-    camRenderer = window.FiltrosCam ? window.FiltrosCam.createFilterRenderer(camCanvas) : null;
+    // O canvas do shader e reaproveitado entre uma ligada e outra. Criar um
+    // contexto WebGL novo a cada vez esgotava o limite do navegador (~16) e
+    // ele comecava a derrubar os mais antigos — inclusive o dos gestos.
+    // So recria se o contexto tiver sido perdido (driver reiniciou, etc).
+    const perdido = camCanvas && camCanvas.getContext('webgl') && camCanvas.getContext('webgl').isContextLost();
+    if (!camRenderer || perdido) {
+      camCanvas = document.createElement('canvas');
+      camCanvas.width = 424; camCanvas.height = 320;
+      camRenderer = window.FiltrosCam ? window.FiltrosCam.createFilterRenderer(camCanvas) : null;
+    }
 
     if (camRenderer) {
       camSaida = document.createElement('canvas');
@@ -2257,7 +2333,7 @@ $('btnCam').addEventListener('click', async () => {
       $('btnEfeitos').disabled = false;
     } else {
       myCam = camBruta;
-      camFonte = null; camCanvas = null;
+      camFonte = null;
     }
 
     // O aviso de "camera desligada" vem do aparelho, entao escuta no track
@@ -2270,8 +2346,10 @@ $('btnCam').addEventListener('click', async () => {
     render();
   } catch (err) {
     if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
-    camFonte = null; camCanvas = null; camRenderer = null;
+    camFonte = null;
     alert('Não consegui acessar a câmera: ' + err.message);
+  } finally {
+    ligandoCam = false;
   }
 });
 
@@ -2294,7 +2372,7 @@ function stopCam() {
   pararRelogioCam();
   if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
   if (camFonte) { camFonte.srcObject = null; camFonte = null; }
-  camCanvas = null; camRenderer = null;
+  // camCanvas/camRenderer ficam guardados: a proxima ligada reaproveita.
 
   const me = members.get(myPeerId);
   if (me) me.camOn = false;
@@ -2835,8 +2913,13 @@ function renderWatch() {
   const m = members.get(watchTarget);
   if (!m) return backToPeople();
 
-  $('watchWho').innerHTML =
-    `<span class="live-badge">AO VIVO</span>${m.name}${m.isMe ? ' — sua transmissão' : ''}`;
+  // O nome vem de outro usuario: vai como TEXTO. Com innerHTML, alguem que
+  // se chamasse "<img src=x onerror=...>" rodaria codigo em quem o assistisse.
+  const who = $('watchWho');
+  const selo = document.createElement('span');
+  selo.className = 'live-badge';
+  selo.textContent = 'AO VIVO';
+  who.replaceChildren(selo, document.createTextNode(m.name + (m.isMe ? ' — sua transmissão' : '')));
 
   // O botao diz pra ONDE volta, em vez de um "voltar" generico.
   const anterior = [...viewStack].reverse().find(v =>
@@ -3021,21 +3104,27 @@ function renderGrid() {
   }
 
   function desenhar() {
+    // Na sala as estrelas somem. Antes o laco continuava para sempre, apagando
+    // um canvas do tamanho da tela 60 vezes por segundo sem desenhar nada.
+    // Agora limpa uma vez, esconde o canvas e para.
+    if (!mostrarSparkles) {
+      ctx.clearRect(0, 0, largura, altura);
+      canvas.style.display = 'none';
+      return;
+    }
     if (!document.hidden) {
       ctx.clearRect(0, 0, largura, altura);
-      if (mostrarSparkles) {
-        t += 0.016;
-        particulas.forEach(p => {
-          p.x += p.vx; p.y += p.vy;
-          if (p.x < 0) p.x = largura; else if (p.x > largura) p.x = 0;
-          if (p.y < 0) p.y = altura; else if (p.y > altura) p.y = 0;
-          const brilho = 0.2 + 0.7 * (0.5 + 0.5 * Math.sin(t * p.veloc + p.fase));
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(180, 190, 255, ${brilho.toFixed(2)})`;
-          ctx.fill();
-        });
-      }
+      t += 0.016;
+      particulas.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0) p.x = largura; else if (p.x > largura) p.x = 0;
+        if (p.y < 0) p.y = altura; else if (p.y > altura) p.y = 0;
+        const brilho = 0.2 + 0.7 * (0.5 + 0.5 * Math.sin(t * p.veloc + p.fase));
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(180, 190, 255, ${brilho.toFixed(2)})`;
+        ctx.fill();
+      });
     }
     requestAnimationFrame(desenhar);
   }
@@ -3053,14 +3142,25 @@ function renderGrid() {
   const RAIO = 260; // px: distancia a partir da qual o brilho ja sumiu de vez
   let pendente = false, ultimoX = -9999, ultimoY = -9999;
 
+  // Ultimo valor escrito em cada card: a maioria esta longe do mouse e fica
+  // em 0, entao nem precisa ser tocada de novo.
+  const ultimoGlow = new WeakMap();
+
   function atualizarGlow(x, y) {
-    document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal').forEach(card => {
-      const r = card.getBoundingClientRect();
+    const cards = document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal');
+    // Primeiro LE todas as posicoes, depois ESCREVE. Intercalar as duas coisas
+    // obrigava o navegador a recalcular o layout da pagina inteira uma vez por
+    // card, a cada movimento do mouse.
+    const rects = Array.from(cards, card => card.getBoundingClientRect());
+    cards.forEach((card, i) => {
+      const r = rects[i];
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const foraDaBorda = Math.hypot(x - cx, y - cy) - Math.max(r.width, r.height) / 2;
-      const perto = Math.max(0, Math.min(1, 1 - foraDaBorda / RAIO));
-      card.style.setProperty('--glow-opacity', perto.toFixed(2));
-      if (perto > 0) {
+      const perto = Math.max(0, Math.min(1, 1 - foraDaBorda / RAIO)).toFixed(2);
+      if (perto === '0.00' && ultimoGlow.get(card) === '0.00') return;
+      ultimoGlow.set(card, perto);
+      card.style.setProperty('--glow-opacity', perto);
+      if (perto !== '0.00') {
         const angulo = Math.atan2(y - cy, x - cx) * 180 / Math.PI + 90;
         card.style.setProperty('--glow-angle', angulo.toFixed(1) + 'deg');
       }

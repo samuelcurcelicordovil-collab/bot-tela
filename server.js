@@ -6,6 +6,7 @@ const fs = require('fs');
 const { ExpressPeerServer } = require('peer');
 const { WebSocketServer } = require('ws');
 const { default: DottedMap } = require('dotted-map');
+const compression = require('compression');
 
 // ============================================================
 // Caixa-preta
@@ -54,6 +55,10 @@ process.on('SIGTERM', () => {
 });
 
 const app = express();
+// Sem isto o index.html (~130 KB), os scripts e o SVG do mapa — buscado de
+// novo a cada entrada/saida da sala — iam sem compressao. Texto assim encolhe
+// para um quarto ou menos, o que pesa muito no 4G.
+app.use(compression());
 app.use(express.json({ limit: '4kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/signaling', (req, res) => res.json({ selfHosted: true }));
@@ -352,7 +357,19 @@ const rooms = new Map(); // codigo -> Map(peerId -> { name, broadcasting, loc, w
 // O que esta tocando em cada sala. So o PONTEIRO da musica mora aqui
 // (qual faixa, em que segundo, desde quando) — o audio nunca passa pelo
 // servidor, cada navegador toca por conta propria.
+// Parar a musica NAO apaga a entrada: ela fica com video nulo, como lapide.
+// Sem isso, quem estava desconectado na hora e voltasse ainda com a faixa
+// antiga reensinaria a sala e a musica "ressuscitaria".
 const musicas = new Map(); // codigo -> { video, tocando, posicao, em, porQuem }
+
+// A posicao guardada vale para o instante 'em'. Antes de mandar, adiantamos
+// ate AGORA no relogio do servidor: assim o cliente nunca faz conta com o
+// horario do servidor, que pode estar segundos adiantado ou atrasado em
+// relacao ao dele.
+function musicaAgora(m) {
+  const passou = m.tocando ? (Date.now() - m.em) / 1000 : 0;
+  return { type: 'music', video: m.video, tocando: m.tocando, posicao: m.posicao + passou, porQuem: m.porQuem };
+}
 
 // Tudo que vem do navegador e corta no tamanho — o cliente pode mandar
 // qualquer coisa, e isto aqui vai ser reenviado pra sala inteira.
@@ -472,8 +489,8 @@ roomWss.on('connection', (ws) => {
         em: Date.now(),
         porQuem: eu.name
       };
-      if (estado.video) musicas.set(myRoom, estado); else musicas.delete(myRoom);
-      broadcast(room, { type: 'music', ...estado }, myId);
+      musicas.set(myRoom, estado);
+      broadcast(room, musicaAgora(estado), myId);
       return;
     }
 
@@ -503,22 +520,29 @@ roomWss.on('connection', (ws) => {
       // Por isso quem chega tocando reensina a sala — mas so quando o servidor
       // ainda nao tem faixa, senao quem entra em silencio apagaria a musica
       // que os outros ja estao ouvindo.
+      // So vale quando o servidor nao sabe NADA da musica desta sala — o caso
+      // tipico e o servidor ter reiniciado. Se ja houve qualquer mudanca aqui,
+      // inclusive alguem parar a musica, o servidor e quem manda.
       const trazida = limparVideo(msg.musica);
       if (trazida && !musicas.has(code)) {
-        musicas.set(code, {
+        const semeada = {
           video: trazida,
           tocando: !!msg.musicaTocando,
           posicao: Math.max(0, Number(msg.musicaPos) || 0),
           em: Date.now(),
           porQuem: name
-        });
+        };
+        musicas.set(code, semeada);
+        // Quem ja estava na sala tambem precisa saber, senao so os proximos
+        // a entrar ouviriam essa faixa.
+        broadcast(room, musicaAgora(semeada));
       }
 
       sendTo(ws, { type: 'join-ok', you: myId, room: code, members: listMembers(room) });
 
       // Cai direto no ponto certo da musica que a sala ja estava ouvindo.
       const musica = musicas.get(code);
-      if (musica) sendTo(ws, { type: 'music', ...musica });
+      if (musica && musica.video) sendTo(ws, musicaAgora(musica));
 
       const existed = room.has(myId);
       room.set(myId, { name, broadcasting, camOn, loc, ws });

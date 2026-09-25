@@ -803,14 +803,42 @@
     return true;
   }
 
+  // O contexto da GPU pode morrer no meio da sessao (o PC dormiu, o driver
+  // reiniciou). Sem isto a deteccao falhava em todo quadro, em silencio, ate
+  // alguem recarregar a pagina. Como no prototipo: depois de varias falhas
+  // seguidas, refaz o reconhecedor na CPU — uma vez so.
+  let errosSeguidos = 0;
+  let reconstruindo = false;
+
+  async function recuperar() {
+    if (reconstruindo || recognizerDelegate !== 'GPU') return;
+    reconstruindo = true;
+    try {
+      try { reconhecedor && reconhecedor.close(); } catch (_) {}
+      reconhecedor = null;
+      recognizerPromise = null;
+      reconhecedor = await loadRecognizer('CPU');
+      errosSeguidos = 0;
+    } catch (err) {
+      console.warn('[gestos] a deteccao de maos parou e nao voltou', err);
+    } finally {
+      reconstruindo = false;
+    }
+  }
+
   // Roda a deteccao. So vale a pena quando o <video> avancou de quadro.
   function processar(agora) {
-    if (!reconhecedor || !video || video.readyState < 2) return;
+    if (!reconhecedor || reconstruindo || !video || video.readyState < 2) return;
     if (video.currentTime === ultimoTempoVideo) return;
     ultimoTempoVideo = video.currentTime;
     let r;
-    try { r = reconhecedor.recognizeForVideo(video, agora); }
-    catch (_) { return; }
+    try {
+      r = reconhecedor.recognizeForVideo(video, agora);
+      errosSeguidos = 0;
+    } catch (_) {
+      if (++errosSeguidos >= 8) recuperar();
+      return;
+    }
     processFrame(r, agora);
   }
 
