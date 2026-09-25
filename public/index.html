@@ -112,20 +112,34 @@
   #peopleView, #watchView, #gridView { grid-column: 2; grid-row: 1 / -1; min-width: 0; }
 
   /* ---------- GESTOS ---------- */
-  #gestoTag {
-    display: none; align-items: center; gap: 6px; margin-left: 8px;
-    padding: 4px 10px; border-radius: 999px; font-size: .74rem;
-    background: #2b2d31; border: 1px solid #3f4147; color: #9aa0a6;
+  /* Painel flutuante acima da barra de baixo. Flutua em vez de ocupar uma
+     faixa fixa para a pagina ficar limpa quando ninguem esta mexendo nele. */
+  #camPanel {
+    display: none; position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 96px; z-index: 20; width: min(560px, calc(100% - 36px));
+    background: #232428; border: 1px solid #3f4147; border-radius: 12px;
+    overflow: hidden; box-shadow: 0 12px 34px rgba(0,0,0,.55);
   }
-  #gestoTag.on { display: inline-flex; }
+  #camPanel.on { display: block; }
+  .camtabs { display: flex; border-bottom: 1px solid #2f3136; }
+  .camtab {
+    flex: 1; padding: 11px 8px; background: none; border: none; border-radius: 0;
+    color: #9aa0a6; font-size: .85rem; font-weight: 600;
+  }
+  .camtab:hover { background: #2b2d31; color: #e3e5e8; }
+  .camtab.sel { color: #fff; box-shadow: inset 0 -2px 0 #5865f2; }
+  .campane { display: none; padding: 12px; }
+  .campane.sel { display: flex; flex-wrap: wrap; gap: 7px; }
+  .camnota {
+    flex-basis: 100%; margin-top: 2px; font-size: .74rem;
+    color: #6a6f76; line-height: 1.45;
+  }
+  #gestoTag { flex-basis: 100%; display: none; font-size: .76rem; color: #9aa0a6; }
+  #gestoTag.on { display: block; }
   #gestoTag b { color: #77d99a; font-weight: 700; }
 
   /* ---------- FILTROS DE CAMERA ---------- */
-  #filtroStrip {
-    display: none; gap: 6px; padding: 10px 18px 0; flex: none;
-    overflow-x: auto; scrollbar-width: thin;
-  }
-  #filtroStrip.on { display: flex; }
+  #filtroStrip { display: flex; flex-wrap: wrap; gap: 7px; }
   .filtrochip {
     flex: none; padding: 6px 13px; font-size: .78rem; border-radius: 999px;
     background: #2b2d31; color: #c9cdd3; border: 1px solid #3f4147;
@@ -212,7 +226,7 @@
     #peopleView, #watchView, #gridView, #chatPanel, #musicPanel { width: 100%; }
     #musicPanel { order: 3; flex: none; }
     /* Gestos exigem ~18 MB e deteccao quadro a quadro: so no computador. */
-    #ctlGestos { display: none; }
+    #btnGestos, #paneEfeitos .camnota { display: none; }
     #chatPanel { order: 4; height: 320px; min-height: 0; }
   }
 
@@ -615,9 +629,21 @@
     <div id="gridView"></div>
   </div>
 
-  <div id="filtroStrip"></div>
-  <div id="gestoTag"></div>
-  <button id="btnScanlines" class="filtrochip" style="display:none">Linhas de varredura</button>
+  <div id="camPanel">
+    <div class="camtabs">
+      <button class="camtab sel" data-pane="paneFiltros">Filtros</button>
+      <button class="camtab" data-pane="paneEfeitos">Efeitos</button>
+    </div>
+    <div class="campane sel" id="paneFiltros">
+      <div id="filtroStrip"></div>
+    </div>
+    <div class="campane" id="paneEfeitos">
+      <button id="btnScanlines" class="filtrochip">Linhas de varredura</button>
+      <button id="btnGestos" class="filtrochip">Efeitos de mão</button>
+      <div class="camnota">Os efeitos de mão reconhecem gestos pela câmera. Baixam cerca de 18 MB na primeira vez e só funcionam no computador.</div>
+      <div id="gestoTag"></div>
+    </div>
+  </div>
 
   <div id="controls">
     <div class="ctl">
@@ -632,11 +658,11 @@
       </button>
       <span class="lbl" id="shareLbl">Transmitir</span>
     </div>
-    <div class="ctl" id="ctlGestos">
-      <button id="btnGestos" title="Efeitos de mão (usa a câmera)" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v14M11 4v16M16 4v16M21 8v12"/></svg>
+    <div class="ctl">
+      <button id="btnEfeitos" title="Filtros e efeitos da câmera" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/><path d="M19 3v4M17 5h4"/></svg>
       </button>
-      <span class="lbl" id="gestosLbl">Gestos</span>
+      <span class="lbl">Efeitos</span>
     </div>
     <div class="ctl">
       <button id="btnGrid" title="Ver todas as transmissões" disabled>
@@ -2129,6 +2155,26 @@ function mostrarGesto(vivo) {
 // As linhas de varredura sao desenhadas na composicao, sem deteccao de mao,
 // entao o botao funciona mesmo com os gestos desligados — e sem baixar os
 // 18 MB do MediaPipe.
+// ---------- painel de filtros e efeitos ----------
+$('btnEfeitos').addEventListener('click', () => {
+  $('camPanel').classList.toggle('on');
+});
+
+document.querySelectorAll('.camtab').forEach(aba => {
+  aba.addEventListener('click', () => {
+    document.querySelectorAll('.camtab').forEach(x => x.classList.toggle('sel', x === aba));
+    document.querySelectorAll('.campane').forEach(p => p.classList.toggle('sel', p.id === aba.dataset.pane));
+  });
+});
+
+// Clicar fora fecha, como nos outros menus do site.
+document.addEventListener('click', e => {
+  const p = $('camPanel');
+  if (!p.classList.contains('on')) return;
+  if (p.contains(e.target) || $('btnEfeitos').contains(e.target)) return;
+  p.classList.remove('on');
+});
+
 $('btnScanlines').addEventListener('click', () => {
   if (!window.GestosCam) return;
   const novo = !GestosCam.estaLigado('scanlines');
@@ -2141,21 +2187,21 @@ $('btnGestos').addEventListener('click', async () => {
   if (gestosLigados) {
     gestosLigados = false;
     GestosCam.parar();
-    $('gestosLbl').textContent = 'Gestos';
-    $('btnGestos').classList.remove('ativo');
+    $('btnGestos').textContent = 'Efeitos de mão';
+    $('btnGestos').classList.remove('sel');
     mostrarGesto(null);
     return;
   }
   gestosCarregando = true;
-  $('gestosLbl').textContent = 'Baixando...';
+  $('btnGestos').textContent = 'Baixando 18 MB...';
   try {
     await GestosCam.iniciar({ video: camFonte, base: camCanvas, aoMudarGesto: mostrarGesto });
     gestosLigados = true;
-    $('gestosLbl').textContent = 'Gestos ✓';
-    $('btnGestos').classList.add('ativo');
+    $('btnGestos').textContent = 'Efeitos de mão';
+    $('btnGestos').classList.add('sel');
     mostrarGesto(null);
   } catch (err) {
-    $('gestosLbl').textContent = 'Gestos';
+    $('btnGestos').textContent = 'Efeitos de mão';
     alert('Não consegui carregar os efeitos de mão: ' + (err && err.message || err));
   } finally {
     gestosCarregando = false;
@@ -2208,9 +2254,7 @@ $('btnCam').addEventListener('click', async () => {
       // efeitos de mao sao desenhados por cima.
       myCam = camSaida.captureStream(24);
       montarTiraFiltros();
-      $('filtroStrip').classList.add('on');
-      $('btnGestos').disabled = false;
-      $('btnScanlines').style.display = '';
+      $('btnEfeitos').disabled = false;
     } else {
       myCam = camBruta;
       camFonte = null; camCanvas = null;
@@ -2241,17 +2285,17 @@ function stopCam() {
   // Parar so o track do canvas deixaria a luz da camera acesa: o aparelho
   // esta preso ao stream bruto, que e outro objeto.
   if (gestosLigados && window.GestosCam) { GestosCam.parar(); gestosLigados = false; }
-  $('btnGestos').disabled = true;
-  $('gestosLbl').textContent = 'Gestos';
-  $('btnGestos').classList.remove('ativo');
+  $('btnEfeitos').disabled = true;
+  $('camPanel').classList.remove('on');
+  $('btnGestos').textContent = 'Efeitos de mão';
+  $('btnGestos').classList.remove('sel');
   mostrarGesto(null);
-  $('btnScanlines').style.display = 'none';
   camSaida = null; camSaidaCtx = null;
   pararRelogioCam();
   if (camBruta) { camBruta.getTracks().forEach(t => t.stop()); camBruta = null; }
   if (camFonte) { camFonte.srcObject = null; camFonte = null; }
   camCanvas = null; camRenderer = null;
-  $('filtroStrip').classList.remove('on');
+
   const me = members.get(myPeerId);
   if (me) me.camOn = false;
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cam-state', on: false }));
