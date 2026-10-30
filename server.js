@@ -319,7 +319,12 @@ const server = http.createServer(app);
 // a lib `ws` derruba com 400 toda conexao que nao for do caminho dela, e um
 // mata o outro. Por isso ambos sao criados como `noServer` e nos mesmos
 // roteamos os upgrades por caminho, mais abaixo.
-const roomWss = new WebSocketServer({ noServer: true });
+// Limite de tamanho por mensagem. Sem isto a lib `ws` aceita ate 100 MB por
+// mensagem — antes mesmo de pedir a senha — e duas ou tres dessas estouram os
+// 512 MB do plano gratis. As mensagens de verdade das salas tem poucos KB.
+const LIMITE_SALAS = 64 * 1024;
+const LIMITE_PEERJS = 256 * 1024;   // ofertas do WebRTC (SDP) tem uns 10 KB
+const roomWss = new WebSocketServer({ noServer: true, maxPayload: LIMITE_SALAS });
 let peerWss = null;
 let peerWsPath = '/peerjs/peerjs';
 
@@ -329,14 +334,24 @@ const peerServer = ExpressPeerServer(server, {
   path: '/',
   createWebSocketServer: (opts) => {
     peerWsPath = opts.path;
-    peerWss = new WebSocketServer({ noServer: true });
+    peerWss = new WebSocketServer({ noServer: true, maxPayload: LIMITE_PEERJS });
     return peerWss;
   }
 });
 app.use('/peerjs', peerServer);
 
+// A lib do PeerJS transforma em evento 'error' qualquer problema numa conexao,
+// inclusive uma mensagem que nao e JSON — que qualquer um consegue mandar, sem
+// senha. Sem ouvinte para esse evento, o Node derruba o processo inteiro. Era
+// a causa mais provavel das quedas do site.
+peerServer.on('error', (err) => registrar('ERRO NO PEERJS', err && err.message));
+
 server.on('upgrade', (req, socket, head) => {
-  const pathname = new URL(req.url, 'http://localhost').pathname;
+  // Um endereco malformado (como "//[") faz o new URL lancar excecao, e uma
+  // excecao aqui derrubava o servidor inteiro.
+  let pathname;
+  try { pathname = new URL(req.url, 'http://localhost').pathname; }
+  catch { socket.destroy(); return; }
 
   if (pathname === '/ws') {
     roomWss.handleUpgrade(req, socket, head, (ws) => roomWss.emit('connection', ws, req));
@@ -562,7 +577,9 @@ roomWss.on('connection', (ws) => {
       const me = room.get(myId);
       if (!me) return;
       me.broadcasting = !!msg.on;
-      if (!me.broadcasting) me.camOn = false;
+      // A camera nao desliga junto: ela e independente da transmissao. Apagar
+      // camOn aqui fazia quem entrasse depois achar que a camera estava
+      // desligada, mesmo ela continuando ligada.
       broadcast(room, { type: 'broadcast-state', peerId: myId, on: me.broadcasting }, myId);
     }
 
@@ -669,5 +686,7 @@ setInterval(() => {
   let pessoas = 0;
   rooms.forEach(r => { pessoas += r.size; });
   if (mb > 380) registrar('MEMORIA ALTA', mb + ' MB de 512 — risco de derrubar o servidor');
-  else registrar('OK', mb + ' MB, ' + pessoas + ' pessoa(s), ' + roomWss.clients.size + ' conexao(oes)');
+  // O "tudo bem" vai so pro console. Na caixa-preta ele ocupava as 60 vagas em
+  // 5 horas e empurrava os erros de verdade pra fora.
+  else console.log('[OK] ' + mb + ' MB, ' + pessoas + ' pessoa(s), ' + roomWss.clients.size + ' conexao(oes)');
 }, 5 * 60000);

@@ -1573,11 +1573,21 @@ function setDot(state) {
   $('connDot').className = 'dot' + (state === 'ok' ? ' ok' : state === 'bad' ? ' bad' : '');
 }
 
-function connectWS() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+let reconexaoTimer = null;
 
-  ws.addEventListener('open', () => {
+function connectWS() {
+  // Uma conexao so. Quando o servidor cai, duas coisas tentam reconectar: o
+  // 'close' daqui e o PeerJS, que dispara 'open' de novo quando o servidor
+  // volta e chama esta funcao. Sem esta guarda cada queda deixava uma conexao
+  // a mais aberta (medido: 1, depois 2, depois 3 apos duas quedas).
+  if (ws && (ws.readyState === ws.CONNECTING || ws.readyState === ws.OPEN)) return;
+  clearTimeout(reconexaoTimer);
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const este = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = este;
+
+  este.addEventListener('open', () => {
     wsRetries = 0;
     $('netBanner').classList.remove('on');
     setDot('ok');
@@ -1596,15 +1606,21 @@ function connectWS() {
     }, 20000);
   });
 
-  ws.addEventListener('message', ev => handleMsg(JSON.parse(ev.data)));
+  este.addEventListener('message', ev => {
+    if (ws !== este) return;   // conexao antiga: ignora
+    handleMsg(JSON.parse(ev.data));
+  });
 
-  ws.addEventListener('close', () => {
+  este.addEventListener('close', () => {
+    // So a conexao atual agenda reconexao. Uma antiga fechando atrasada nao pode
+    // acender o aviso de queda nem abrir mais uma conexao.
+    if (ws !== este) return;
     clearInterval(pingTimer);
     setDot('bad');
     $('netBanner').classList.add('on');
     // Reconecta com espera crescente: 1s, 2s, 4s... maximo 15s.
     const delay = Math.min(15000, 1000 * 2 ** wsRetries++);
-    setTimeout(connectWS, delay);
+    reconexaoTimer = setTimeout(connectWS, delay);
   });
 }
 
