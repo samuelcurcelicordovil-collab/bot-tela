@@ -2734,7 +2734,10 @@ function aplicarVolume() {
   const v = $('watchVideo');
   v.volume = volume / 100;
   // Volume zero equivale a mudo, entao os dois controles andam juntos.
-  v.muted = muted || volume === 0;
+  // A propria transmissao fica SEMPRE muda: sem isto, mexer no volume (as
+  // setas, por exemplo) enquanto voce se assiste tirava o mudo e voce passava
+  // a escutar o proprio microfone.
+  v.muted = muted || volume === 0 || watchTarget === myPeerId;
 
   // A grade tambem obedece (o meu proprio quadro continua sempre mudo).
   document.querySelectorAll('#gridView .gtile video').forEach(el => {
