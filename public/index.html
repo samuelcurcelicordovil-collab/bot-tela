@@ -100,6 +100,17 @@
   }
   #netBanner.on { display: block; }
 
+  /* aviso de que o som pedido nao veio na transmissao */
+  #somBanner {
+    display: none; background: #5a2a2c; color: #ffd0d2; font-size: .85rem;
+    padding: 8px 18px; text-align: center; flex: none;
+  }
+  #somBanner.on { display: block; }
+  #somBanner button {
+    margin-left: 10px; padding: 2px 10px; font-size: .78rem; border: none;
+    border-radius: 4px; background: rgba(255,255,255,.15); color: inherit; cursor: pointer;
+  }
+
   #diagPanel {
     display: none; background: #232428; border-bottom: 1px solid #2f3136;
     padding: 12px 18px; font-size: .82rem; line-height: 1.7; flex: none;
@@ -547,6 +558,7 @@
   </div>
 
   <div id="netBanner">⚠️ Conexão com o servidor caiu — reconectando automaticamente...</div>
+  <div id="somBanner"><span id="somBannerTexto"></span><button id="btnFecharSom">Entendi</button></div>
   <div id="diagPanel"></div>
 
   <div id="stage">
@@ -753,7 +765,7 @@
       <input type="radio" name="aud" value="display">
       <span>
         <div class="t">Som do que eu compartilhar</div>
-        <div class="d">Marque "compartilhar áudio" no seletor do navegador. Numa <b>aba</b>, vem só o som da aba. Na <b>tela inteira</b>, vem o som do sistema todo.</div>
+        <div class="d">Ligue o áudio no seletor do navegador. Numa <b>janela</b> (o jogo, o Spotify) ou numa <b>aba</b>, vem só o som dela. Na <b>tela inteira</b>, vem o som do computador todo.</div>
       </span>
     </label>
 
@@ -1857,7 +1869,7 @@ function updateAudNote() {
     note.innerHTML = '✅ Nenhum som do computador é capturado. É impossível vazar a call do Discord.';
   } else if (choice === 'display') {
     note.className = 'note warn';
-    note.innerHTML = '⚠️ Numa <b>aba do navegador</b>, vem só o som da aba — o Discord fica de fora. Na <b>tela inteira</b> com áudio marcado, o som do sistema <b>inteiro</b> vai junto, incluindo a call.';
+    note.innerHTML = '⚠️ Escolha a <b>janela do jogo</b> (ou uma <b>aba</b>) e ligue o áudio no seletor: vem só o som dela e o Discord fica de fora. Na <b>tela inteira</b>, vai o som do computador <b>inteiro</b>, incluindo a call. Funciona no Chrome e no Edge.';
   } else {
     note.className = 'note good';
     note.innerHTML = '✅ Captura só o dispositivo escolhido. Com um cabo virtual (VB-Cable), dá tela inteira com som do jogo e sem a call.';
@@ -1895,6 +1907,28 @@ function mixToOneTrack(sources) {
   return dest.stream.getAudioTracks()[0];
 }
 
+// Opcoes de captura, usadas ao comecar a transmitir e ao trocar de tela.
+// 'windowAudio: window' faz o Chrome/Edge 141+ oferecer o som SO da janela
+// escolhida (o jogo, o Spotify): e assim que da para transmitir com som sem
+// levar junto a call do Discord. Sem essa opcao, o navegador so isolava o som
+// de uma aba dele mesmo. 'systemAudio: include' garante que a chave de som
+// aparece na tela inteira (que leva o som do computador todo). Navegadores que
+// nao conhecem essas opcoes simplesmente as ignoram.
+function opcoesDeCaptura(video, comSom) {
+  if (!comSom) return { video, audio: false };
+  return { video, audio: {}, windowAudio: 'window', systemAudio: 'include' };
+}
+
+// O aviso antigo ia para dentro da janela "Transmitir minha tela", que nesse
+// momento ja esta fechada: ninguem chegava a ver e a transmissao seguia muda.
+function avisarSemSom() {
+  $('somBannerTexto').textContent = 'Você pediu som, mas o navegador não entregou áudio. '
+    + 'A imagem continua sendo transmitida. Para ter som, escolha uma janela ou aba '
+    + 'e ligue o áudio no seletor (Chrome ou Edge).';
+  $('somBanner').classList.add('on');
+}
+$('btnFecharSom').addEventListener('click', () => $('somBanner').classList.remove('on'));
+
 $('btnConfirmShare').addEventListener('click', async () => {
   const choice = audioChoice();
   const wantMic = $('micOpt').checked;
@@ -1913,10 +1947,8 @@ $('btnConfirmShare').addEventListener('click', async () => {
       height: { max: qual }
     };
 
-    const display = await navigator.mediaDevices.getDisplayMedia({
-      video,
-      audio: choice === 'display' ? {} : false
-    });
+    const display = await navigator.mediaDevices.getDisplayMedia(
+      opcoesDeCaptura(video, choice === 'display'));
 
     // Reforco: o Chrome as vezes entrega a tela em resolucao nativa mesmo
     // com o limite pedido acima. Aplicar de novo na faixa garante o teto.
@@ -1939,10 +1971,8 @@ $('btnConfirmShare').addEventListener('click', async () => {
     const audioTracks = [];
     if (choice === 'display') {
       display.getAudioTracks().forEach(t => audioTracks.push(t));
-      if (!audioTracks.length) {
-        $('audNote').className = 'note warn';
-        $('audNote').textContent = 'O navegador não capturou o áudio. Pare e tente novamente marcando "Compartilhar áudio" na janela de seleção.';
-      }
+      if (audioTracks.length) $('somBanner').classList.remove('on');
+      else avisarSemSom();
     }
     if (choice === 'device') {
       const id = $('deviceSelect').value;
@@ -2030,6 +2060,7 @@ function stopShare() {
   pararCapturaAtual();
   myStream = null;
   ultimaConfigShare = null;
+  $('somBanner').classList.remove('on');
   const me = members.get(myPeerId);
   if (me) me.broadcasting = false;
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: false }));
@@ -2056,9 +2087,8 @@ async function trocarTela() {
       height: { max: qual }
     };
 
-    const display = await navigator.mediaDevices.getDisplayMedia({
-      video, audio: choice === 'display' ? {} : false
-    });
+    const display = await navigator.mediaDevices.getDisplayMedia(
+      opcoesDeCaptura(video, choice === 'display'));
     const novoVideo = display.getVideoTracks()[0];
     if (!novoVideo) return;
 
@@ -2072,7 +2102,11 @@ async function trocarTela() {
 
     // Remonta o áudio igual ao compartilhamento original.
     const audioTracks = [];
-    if (choice === 'display') display.getAudioTracks().forEach(t => audioTracks.push(t));
+    if (choice === 'display') {
+      display.getAudioTracks().forEach(t => audioTracks.push(t));
+      if (audioTracks.length) $('somBanner').classList.remove('on');
+      else avisarSemSom();
+    }
     if (choice === 'device' && deviceId) {
       const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
       dev.getAudioTracks().forEach(t => audioTracks.push(t));
