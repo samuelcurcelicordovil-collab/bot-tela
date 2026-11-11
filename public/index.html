@@ -1537,7 +1537,7 @@ function initPeer() {
   peer.on('call', call => {
     const isCam = call.metadata && call.metadata.kind === 'cam';
     const bucket = isCam ? camStreams : streams;
-    call.answer();
+    call.answer(undefined, somEstereo ? { sdpTransform: sdpComSomEstereo } : {});
     call.on('stream', remote => {
       bucket.set(call.peer, remote);
       if (!isCam) connState.delete(call.peer);
@@ -1914,9 +1914,14 @@ function mixToOneTrack(sources) {
 // de uma aba dele mesmo. 'systemAudio: include' garante que a chave de som
 // aparece na tela inteira (que leva o som do computador todo). Navegadores que
 // nao conhecem essas opcoes simplesmente as ignoram.
+// Som de jogo e musica vai CRU: os filtros de voz do navegador (cancelar eco,
+// tirar ruido, ganho automatico) abafam a musica e fazem o volume "respirar".
+// O microfone continua com os filtros, que para voz ajudam.
+const SOM_CRU = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
 function opcoesDeCaptura(video, comSom) {
   if (!comSom) return { video, audio: false };
-  return { video, audio: {}, windowAudio: 'window', systemAudio: 'include' };
+  return { video, audio: { ...SOM_CRU }, windowAudio: 'window', systemAudio: 'include' };
 }
 
 // O aviso antigo ia para dentro da janela "Transmitir minha tela", que nesse
@@ -1976,7 +1981,7 @@ $('btnConfirmShare').addEventListener('click', async () => {
     }
     if (choice === 'device') {
       const id = $('deviceSelect').value;
-      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } } });
+      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id }, ...SOM_CRU, channelCount: 2 } });
       dev.getAudioTracks().forEach(t => audioTracks.push(t));
     }
     if (wantMic) {
@@ -2011,6 +2016,7 @@ function callPeer(peerId) {
   const call = peer.call(peerId, myStream);
   outgoing.set(peerId, call);
   priorizarFluidez(call);
+  ajustarSom(call);
 }
 
 // Diz ao codificador: quando faltar banda, prefira BAIXAR A RESOLUCAO em vez
@@ -2037,6 +2043,78 @@ async function priorizarFluidez(call, tentativa = 0) {
 }
 
 const BITRATE_720P = 2_500_000; // ~2.5 Mbps: nitido em 720p, sempre no teto
+
+// ============================================================
+// Som de jogo e musica com qualidade
+// O navegador trata todo som de chamada como VOZ: manda mono a 32 kbps, e a
+// musica chega abafada, sem agudos. Duas coisas resolvem:
+//  1. quem ASSISTE avisa, na resposta da conexao, que aceita som estereo
+//     (sdpComSomEstereo, usado no call.answer);
+//  2. quem TRANSMITE sobe o teto de qualidade do som (ajustarSom).
+// ============================================================
+const BITRATE_SOM = 160_000;  // som do computador (jogo, musica), em estereo
+const BITRATE_VOZ = 64_000;   // so o microfone
+let somEstereo = true;
+
+function sdpComSomEstereo(sdp) {
+  try {
+    const mapa = sdp.match(/a=rtpmap:([0-9]+) opus[/]48000[/]2/i);
+    if (!mapa) return sdp;
+    const pt = mapa[1];
+    const linha = new RegExp('a=fmtp:' + pt + ' (.*)');
+    if (!linha.test(sdp)) return sdp;
+    return sdp.replace(linha, (tudo, params) =>
+      /(^|;) *stereo=1/.test(params) ? tudo : `a=fmtp:${pt} ${params};stereo=1;sprop-stereo=1`);
+  } catch {
+    return sdp;
+  }
+}
+
+// O Chrome pretende, no futuro, recusar respostas alteradas assim. Testa uma
+// vez, numa conexao de mentira que nao sai do navegador: se ele recusar,
+// desliga o estereo. Melhor som mono do que ficar sem imagem.
+async function testarSomEstereo() {
+  let a, b;
+  try {
+    a = new RTCPeerConnection();
+    b = new RTCPeerConnection();
+    a.addTransceiver('audio', { direction: 'sendonly' });
+    await a.setLocalDescription(await a.createOffer());
+    await b.setRemoteDescription(a.localDescription);
+    const resposta = await b.createAnswer();
+    try {
+      await b.setLocalDescription({ type: 'answer', sdp: sdpComSomEstereo(resposta.sdp) });
+    } catch (e) {
+      somEstereo = false;
+      console.warn('o navegador recusou o som estereo, fica em mono:', e.message);
+    }
+  } catch {
+    // Falhou antes de chegar no teste: nao da para concluir nada.
+  } finally {
+    try { a && a.close(); } catch {}
+    try { b && b.close(); } catch {}
+  }
+}
+testarSomEstereo();
+
+async function ajustarSom(call, tentativa = 0) {
+  const pc = call.peerConnection;
+  if (!pc || !myStream || !myStream.getAudioTracks().length) return;
+  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+  if (!sender) {
+    if (tentativa < 10) setTimeout(() => ajustarSom(call, tentativa + 1), 300);
+    return;
+  }
+  try {
+    const p = sender.getParameters();
+    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    const soVoz = ultimaConfigShare && ultimaConfigShare.choice === 'none';
+    p.encodings[0].maxBitrate = soVoz ? BITRATE_VOZ : BITRATE_SOM;
+    await sender.setParameters(p);
+  } catch (e) {
+    console.warn('nao consegui ajustar o som:', e.message);
+  }
+}
 
 function callPeerCam(peerId) {
   if (peerId === myPeerId || !myCam) return;
@@ -2108,7 +2186,7 @@ async function trocarTela() {
       else avisarSemSom();
     }
     if (choice === 'device' && deviceId) {
-      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+      const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId }, ...SOM_CRU, channelCount: 2 } });
       dev.getAudioTracks().forEach(t => audioTracks.push(t));
     }
     if (wantMic) {
