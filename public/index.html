@@ -765,7 +765,7 @@
       <input type="radio" name="aud" value="display">
       <span>
         <div class="t">Som do que eu compartilhar</div>
-        <div class="d">Ligue o áudio no seletor do navegador. Numa <b>janela</b> (o jogo, o Spotify) ou numa <b>aba</b>, vem só o som dela. Na <b>tela inteira</b>, vem o som do computador todo.</div>
+        <div class="d">Numa <b>janela</b> (o jogo, o Spotify) ou numa <b>aba</b>, vem só o som dela. Na <b>tela inteira</b>, vem o som do computador todo.</div>
       </span>
     </label>
 
@@ -1869,7 +1869,7 @@ function updateAudNote() {
     note.innerHTML = '✅ Nenhum som do computador é capturado. É impossível vazar a call do Discord.';
   } else if (choice === 'display') {
     note.className = 'note warn';
-    note.innerHTML = '⚠️ Escolha a <b>janela do jogo</b> (ou uma <b>aba</b>) e ligue o áudio no seletor: vem só o som dela e o Discord fica de fora. Na <b>tela inteira</b>, vai o som do computador <b>inteiro</b>, incluindo a call. Funciona no Chrome e no Edge.';
+    note.innerHTML = '⚠️ Escolha a <b>janela do jogo</b> (ou uma <b>aba</b>): vem só o som dela e a call do Discord fica de fora. A chave de áudio do seletor já vem ligada; se não vier, ligue. Na <b>tela inteira</b>, vai o som do computador <b>inteiro</b>, incluindo a call. Som de janela precisa de Windows 11 e de Chrome, Edge ou Brave.';
   } else {
     note.className = 'note good';
     note.innerHTML = '✅ Captura só o dispositivo escolhido. Com um cabo virtual (VB-Cable), dá tela inteira com som do jogo e sem a call.';
@@ -1914,6 +1914,9 @@ function mixToOneTrack(sources) {
 // de uma aba dele mesmo. 'systemAudio: include' garante que a chave de som
 // aparece na tela inteira (que leva o som do computador todo). Navegadores que
 // nao conhecem essas opcoes simplesmente as ignoram.
+// 'audioSelection: preferred' faz a chave de som do seletor ja vir LIGADA para
+// janela e tela inteira (Chrome, Edge e Brave 152+). Sem isso ela vinha
+// desligada, e so as abas saiam com som, porque so nelas ela ja vem ligada.
 // Som de jogo e musica vai CRU: os filtros de voz do navegador (cancelar eco,
 // tirar ruido, ganho automatico) abafam a musica e fazem o volume "respirar".
 // O microfone continua com os filtros, que para voz ajudam.
@@ -1921,16 +1924,32 @@ const SOM_CRU = { echoCancellation: false, noiseSuppression: false, autoGainCont
 
 function opcoesDeCaptura(video, comSom) {
   if (!comSom) return { video, audio: false };
-  return { video, audio: { ...SOM_CRU }, windowAudio: 'window', systemAudio: 'include' };
+  return {
+    video, audio: { ...SOM_CRU },
+    windowAudio: 'window', systemAudio: 'include', audioSelection: 'preferred'
+  };
 }
 
 // O aviso antigo ia para dentro da janela "Transmitir minha tela", que nesse
 // momento ja esta fechada: ninguem chegava a ver e a transmissao seguia muda.
-function avisarSemSom() {
-  $('somBannerTexto').textContent = 'Você pediu som, mas o navegador não entregou áudio. '
-    + 'A imagem continua sendo transmitida. Para ter som, escolha uma janela ou aba '
-    + 'e ligue o áudio no seletor (Chrome ou Edge).';
-  $('somBanner').classList.add('on');
+// O tipo do que foi capturado vem do proprio navegador: 'window' (janela),
+// 'monitor' (tela inteira) ou 'browser' (aba).
+function avisarSobreSom(display, temSom) {
+  let tipo = '';
+  try { tipo = display.getVideoTracks()[0].getSettings().displaySurface || ''; } catch {}
+  let texto = '';
+  if (!temSom) {
+    texto = 'Você pediu som, mas a transmissão saiu SEM som. A imagem continua indo normal. '
+      + 'Para ter som: pare, clique em Transmitir de novo e, na janelinha de escolher a tela, '
+      + 'confira embaixo se a chave de áudio está LIGADA antes de compartilhar. '
+      + 'Som de janela precisa de Windows 11 e de Chrome, Edge ou Brave atualizado.';
+  } else if (tipo === 'monitor') {
+    texto = 'Você está transmitindo a TELA INTEIRA com o som do computador todo: a call do Discord '
+      + 'vai junto e seus amigos vão ouvir a própria voz. Para mandar só o som do jogo, '
+      + 'clique em Trocar tela e escolha a JANELA do jogo.';
+  }
+  $('somBannerTexto').textContent = texto;
+  $('somBanner').classList.toggle('on', !!texto);
 }
 $('btnFecharSom').addEventListener('click', () => $('somBanner').classList.remove('on'));
 
@@ -1976,8 +1995,7 @@ $('btnConfirmShare').addEventListener('click', async () => {
     const audioTracks = [];
     if (choice === 'display') {
       display.getAudioTracks().forEach(t => audioTracks.push(t));
-      if (audioTracks.length) $('somBanner').classList.remove('on');
-      else avisarSemSom();
+      avisarSobreSom(display, audioTracks.length > 0);
     }
     if (choice === 'device') {
       const id = $('deviceSelect').value;
@@ -2182,8 +2200,7 @@ async function trocarTela() {
     const audioTracks = [];
     if (choice === 'display') {
       display.getAudioTracks().forEach(t => audioTracks.push(t));
-      if (audioTracks.length) $('somBanner').classList.remove('on');
-      else avisarSemSom();
+      avisarSobreSom(display, audioTracks.length > 0);
     }
     if (choice === 'device' && deviceId) {
       const dev = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId }, ...SOM_CRU, channelCount: 2 } });
