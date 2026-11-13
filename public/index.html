@@ -28,10 +28,12 @@
   button.ghost:hover { background: #3a3d43; }
   button.danger { background: #da373c; }
   button.danger:hover { background: #a12828; }
-  input[type=text], select {
+  input[type=text], input[type=password], select {
     padding: 10px; border-radius: 6px; border: 1px solid #3f4147;
     background: #1a1b1e; color: #e3e5e8; font-size: .95rem; font-family: inherit; width: 100%;
   }
+  input[type=text]:focus, input[type=password]:focus, select:focus { outline: none; border-color: #5865f2; }
+  input[type=checkbox], input[type=radio] { accent-color: #5865f2; }
 
   /* ---------- POEIRA DE ESTRELAS (Sparkles) — atras de tudo, na tela toda ---------- */
   #sparkles {
@@ -280,7 +282,7 @@
   }
 
   /* ---------- TILES DE PESSOAS (estilo Discord) ---------- */
-  #peopleView { display: grid; gap: 14px; max-width: 1100px; margin: 0 auto;
+  #peopleView { display: grid; gap: 14px; width: 100%; max-width: 1100px; margin: 0 auto;
                 grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
   .ptile {
     position: relative; background: #232428; border-radius: 12px;
@@ -403,6 +405,38 @@
   }
   .stats.ruim { color: #f0b232; border-color: #6b5417; }
   .stats.relay { color: #f0b232; }
+  .stats svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 5px; }
+  .watchbar button { display: inline-flex; align-items: center; gap: 6px; }
+  .watchbar button svg { width: 16px; height: 16px; flex: none; }
+  #btnMute { padding: 8px; }
+  #btnMute.semsom { color: #f0b232; }
+  #btnMute span { font-size: .82rem; }
+  /* Qualidade da transmissao em uma palavra; os numeros aparecem ao clicar. */
+  .sinal {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+    font-size: .78rem; color: #c9cdd3; background: #1f2023; border: 1px solid #2f3136;
+    border-radius: 6px; padding: 6px 9px; white-space: nowrap;
+  }
+  .sinal:hover { border-color: #4a4d55; }
+  .sinal .barras { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .sinal .barras i { width: 3px; border-radius: 1px; background: #4a4d55; }
+  .sinal .barras i:nth-child(1) { height: 5px; }
+  .sinal .barras i:nth-child(2) { height: 8px; }
+  .sinal .barras i:nth-child(3) { height: 12px; }
+  .sinal.boa .barras i { background: #3ba55c; }
+  .sinal.instavel { border-color: #6b5417; }
+  .sinal.instavel .barras i:nth-child(-n+2) { background: #f0b232; }
+  .sinal.ruim { border-color: #7a2a2d; }
+  .sinal.ruim .barras i:nth-child(1) { background: #da373c; }
+  .sinal .det {
+    display: none; font-family: ui-monospace, Consolas, monospace; font-size: .7rem; color: #9aa0a6;
+  }
+  .sinal.aberto .det { display: inline; }
+  .pipicon svg, .fsicon svg, .camctl button svg { width: 13px; height: 13px; display: block; }
+  .gtile .bar button svg { width: 14px; height: 14px; display: block; }
+  .viewchip svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; }
+  .framemsg .big svg { width: 38px; height: 38px; color: #9aa0a6; }
+  #btnMusicUnlock svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 6px; }
   .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
                 overflow: hidden; position: relative; border: 1px solid #2f3136; }
   .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -564,6 +598,29 @@
   #deviceWrap.show { display: block; }
   .checkline { display: flex; align-items: center; gap: 8px; font-size: .88rem;
                color: #c9cdd3; margin-top: 14px; }
+  /* Janela "Transmitir": uma escolha so, em dois cartoes grandes. */
+  .somcards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .somcard {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 18px 12px 15px; border: 2px solid #3f4147; border-radius: 10px;
+    cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
+  }
+  .somcard:hover { border-color: #5865f2; }
+  .somcard input { position: absolute; opacity: 0; pointer-events: none; }
+  .somcard svg { width: 30px; height: 30px; color: #9aa0a6; margin-bottom: 5px; }
+  .somcard .t { font-size: .98rem; font-weight: 700; }
+  .somcard .d { font-size: .78rem; color: #9aa0a6; }
+  .somcard:has(input:checked) { border-color: #5865f2; background: rgba(88, 101, 242, .14); }
+  .somcard:has(input:checked) svg { color: #fff; }
+  .somcard:has(input:focus-visible) { outline: 2px solid #8b95ff; outline-offset: 2px; }
+  .note.info { background: #1f2330; border: 1px solid #343b57; color: #c9cdd3; }
+  .note:empty { display: none; }
+  .maisopcoes { margin-top: 16px; border-top: 1px solid #2f3136; padding-top: 12px; }
+  .maisopcoes summary { cursor: pointer; font-size: .84rem; color: #9aa0a6; user-select: none; }
+  .maisopcoes summary:hover { color: #e3e5e8; }
+  .maisopcoes .field { margin-top: 12px; }
+  .maisopcoes .field label { display: block; font-size: .8rem; color: #9aa0a6; margin-bottom: 6px; }
+  .maisopcoes .hint { font-size: .76rem; color: #6a6f76; margin-top: 6px; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -579,7 +636,7 @@
     <span class="servername">LOL 2</span>
     <span class="dot" id="connDot" title="Estado da conexão"></span>
     <span class="count" id="memberCount"></span>
-    <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue em "Testar conexão" lá em cima se não precisar.">🔁 retransmissão forçada</span>
+    <span id="relayBadge" class="stats relay" style="display:none" title="Você está forçando retransmissão. Desligue em "Testar conexão" lá em cima se não precisar.">retransmissão forçada</span>
     <span id="upBadge" class="stats" style="display:none"></span>
     <span class="stats" id="roomBadge" title="Clique para copiar o link de convite desta sala" style="cursor:pointer"></span>
     <button class="iconbtn" id="btnTrocarSala" title="Sair da sala">
@@ -592,7 +649,7 @@
     </button>
   </div>
 
-  <div id="netBanner">⚠️ Conexão com o servidor caiu — reconectando automaticamente...</div>
+  <div id="netBanner">Conexão com o servidor caiu — reconectando automaticamente...</div>
   <div id="somBanner"><span id="somBannerTexto"></span><button id="btnFecharSom">Entendi</button></div>
   <div id="diagPanel"></div>
 
@@ -623,7 +680,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;color:#9aa0a6;flex:none"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 5.6a9 9 0 0 1 0 12.7"/></svg>
         <input type="range" id="musicVol" min="0" max="100" value="60" title="Volume da música (só pra você)">
       </div>
-      <button id="btnMusicUnlock">🔊 Toque para ouvir</button>
+      <button id="btnMusicUnlock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 5.6a9 9 0 0 1 0 12.7"/></svg>Toque para ouvir</button>
       <div id="musicQueue" style="display:none">
         <div class="queuehead">
           <span class="t" id="queueTitle">Fila</span>
@@ -650,17 +707,16 @@
 
     <div id="watchView">
       <div class="watchbar">
-        <button class="ghost" id="btnBack">← Voltar</button>
+        <button class="ghost" id="btnBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span id="btnBackTxt">Voltar</span></button>
         <span class="who" id="watchWho"></span>
         <div class="spacer"></div>
-        <span id="statsBadge" class="stats"></span>
-        <button class="ghost" id="btnShowCam" style="display:none">📹 Mostrar câmera</button>
-        <button class="ghost" id="btnMute">🔊 Som ligado</button>
+        <span id="statsBadge" class="sinal" role="button" tabindex="0" style="display:none"><span class="barras"><i></i><i></i><i></i></span><span class="rot"></span><span class="det"></span></span>
+        <button class="ghost" id="btnShowCam" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg><span>Mostrar câmera</span></button>
         <span class="volctl" id="volCtl" title="Volume (teclas ↑ e ↓)">
+          <button class="ghost" id="btnMute"></button>
           <input type="range" id="volRange" min="0" max="100" step="5">
-          <span class="val" id="volVal"></span>
         </span>
-        <button class="ghost" id="btnFs">⛶ Tela cheia</button>
+        <button class="ghost" id="btnFs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Tela cheia</span></button>
       </div>
       <div class="switchrow" id="switchRow"></div>
       <div class="videoframe" id="watchFrame">
@@ -673,10 +729,10 @@
         <div class="camoverlay" id="watchCam">
           <video autoplay playsinline muted></video>
           <div class="camctl">
-            <button data-act="full" title="Tela cheia">⛶</button>
-            <button data-act="pip" title="Pop-up (fica por cima de outras janelas)">⧉</button>
+            <button data-act="full" title="Tela cheia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button data-act="pip" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></button>
             <button data-act="size" title="Tamanho">M</button>
-            <button data-act="hide" title="Esconder">✕</button>
+            <button data-act="hide" title="Esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
           </div>
           <div class="camhint">arraste para mover · duplo clique = tela cheia</div>
         </div>
@@ -782,52 +838,46 @@
 <div class="backdrop" id="shareBackdrop">
   <div class="modal">
     <h3>Transmitir minha tela</h3>
-    <p class="lead">Ajuste a qualidade e o som antes de selecionar a tela.</p>
+    <p class="lead">Quer mandar o som junto?</p>
 
-    <div class="field" style="margin-bottom:18px">
-      <label style="display:block;font-size:.82rem;color:#9aa0a6;margin-bottom:6px">Qualidade</label>
-      <select id="qualSelect">
-        <option value="720" selected>720p — padrão</option>
-        <option value="480">480p — se estiver travando</option>
-      </select>
-      <div style="font-size:.78rem;color:#6a6f76;margin-top:6px">
-        720p é o teto para todo mundo. Se a imagem travar, 480p usa bem menos internet
-        — lembrando que o envio é dividido por cada pessoa que está assistindo.
-      </div>
+    <div class="somcards">
+      <label class="somcard">
+        <input type="radio" name="aud" value="display">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 5.6a9 9 0 0 1 0 12.7"/></svg>
+        <span class="t">Com som</span>
+        <span class="d">O som do jogo ou da janela</span>
+      </label>
+      <label class="somcard">
+        <input type="radio" name="aud" value="none" checked>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg>
+        <span class="t">Sem som</span>
+        <span class="d">Só a imagem</span>
+      </label>
     </div>
 
-    <label class="opt">
-      <input type="radio" name="aud" value="none" checked>
-      <span>
-        <div class="t">Sem som</div>
-        <div class="d">Só a imagem. O Discord continua intocado.</div>
-      </span>
-    </label>
-
-    <label class="opt">
-      <input type="radio" name="aud" value="display">
-      <span>
-        <div class="t">Som do que eu compartilhar</div>
-        <div class="d">Numa <b>janela</b> (o jogo, o Spotify) ou numa <b>aba</b>, vem só o som dela. Na <b>tela inteira</b>, vem o som do computador todo.</div>
-      </span>
-    </label>
-
-    <label class="opt">
-      <input type="radio" name="aud" value="device">
-      <span>
-        <div class="t">De um dispositivo de áudio</div>
-        <div class="d">Para cabo virtual (VB-Cable). Permite tela inteira com som do jogo e sem o Discord.</div>
-      </span>
-    </label>
-    <div id="deviceWrap">
-      <select id="deviceSelect"><option>Carregando dispositivos...</option></select>
-    </div>
+    <div class="note" id="audNote"></div>
 
     <label class="checkline">
       <input type="checkbox" id="micOpt"> Enviar também meu microfone (minha voz)
     </label>
 
-    <div class="note" id="audNote"></div>
+    <details class="maisopcoes" id="maisOpcoes">
+      <summary>Mais opções</summary>
+      <div class="field">
+        <label for="qualSelect">Qualidade</label>
+        <select id="qualSelect">
+          <option value="720" selected>720p (padrão)</option>
+          <option value="480">480p (se estiver travando)</option>
+        </select>
+        <div class="hint">480p usa bem menos internet. O envio é multiplicado por cada pessoa assistindo.</div>
+      </div>
+      <label class="checkline">
+        <input type="radio" name="aud" value="device"> Pegar o som de um cabo virtual (VB-Cable)
+      </label>
+      <div id="deviceWrap">
+        <select id="deviceSelect"><option>Carregando dispositivos...</option></select>
+      </div>
+    </details>
 
     <div class="actions">
       <button class="ghost" id="btnCancelShare">Cancelar</button>
@@ -1144,16 +1194,20 @@ $('roomBadge').addEventListener('click', async () => {
   const url = new URL(location.href);
   url.searchParams.set('sala', ROOM);
   const texto = url.toString();
-  const badge = $('roomBadge');
-  const original = badge.textContent;
   try {
     await navigator.clipboard.writeText(texto);
-    badge.textContent = '✅ link copiado!';
+    pintarSala('Link copiado!', ICO_CHECK);
   } catch {
     prompt('Copie o link da sala:', texto);
   }
-  setTimeout(() => { badge.textContent = original; }, 1800);
+  setTimeout(() => pintarSala(ROOM), 1800);
 });
+
+function pintarSala(texto, icone = ICO_LINK) {
+  const selo = $('roomBadge');
+  selo.innerHTML = icone;
+  selo.appendChild(document.createTextNode(texto));
+}
 
 // Atalho pra GIF/imagem: se a mensagem for SO um link direto pra imagem
 // (ex: link "copiar imagem" do Tenor/Giphy, que termina em .gif/.png/...),
@@ -1472,6 +1526,15 @@ $('btnQueueClear').addEventListener('click', () => {
 });
 
 const ICO_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+const ICO = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+const ICO_SOM_ON = ICO('<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 5.6a9 9 0 0 1 0 12.7"/>');
+const ICO_SOM_OFF = ICO('<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>');
+const ICO_CHEIA = ICO('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>');
+const ICO_OLHO = ICO('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>');
+const ICO_LINK = ICO('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>');
+const ICO_CHECK = ICO('<path d="M20 6 9 17l-5-5"/>');
+const ICO_BLOQ = ICO('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>');
+const ICO_ESPERA = ICO('<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>');
 const ICO_PAUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
 
 function renderMusica() {
@@ -1655,7 +1718,7 @@ async function boot() {
   mostrarSparkles = false;
   $('app').style.display = 'flex';
   $('meName').textContent = myName;
-  $('roomBadge').textContent = '🔑 ' + ROOM;
+  pintarSala(ROOM);
   $('relayBadge').style.display = forcarRelay() ? '' : 'none';
   // A localizacao so serve para o ponto no mapa do fundo: nao segura a
   // entrada na sala. Antes o boot esperava o ipapi.co (ate 4s quando lento)
@@ -2028,6 +2091,15 @@ $('btnShare').addEventListener('click', () => {
   if (myStream) return stopShare();
   const salva = localStorage.getItem('botTelaQualidade');
   if (salva) $('qualSelect').value = salva;
+  // Abre ja na ultima escolha de som: quem sempre transmite com som nao
+  // precisa marcar de novo toda vez.
+  const som = localStorage.getItem('botTelaSom');
+  if (['none', 'display', 'device'].includes(som)) {
+    document.querySelector('input[name=aud][value=' + som + ']').checked = true;
+  }
+  const viaCabo = audioChoice() === 'device';
+  $('deviceWrap').classList.toggle('show', viaCabo);
+  if (viaCabo) { $('maisOpcoes').open = true; loadDevices(); }
   $('shareBackdrop').classList.add('open');
   updateAudNote();
 });
@@ -2047,15 +2119,15 @@ function audioChoice() { return document.querySelector('input[name=aud]:checked'
 function updateAudNote() {
   const note = $('audNote');
   const choice = audioChoice();
-  if (choice === 'none') {
-    note.className = 'note good';
-    note.innerHTML = '✅ Nenhum som do computador é capturado. É impossível vazar a call do Discord.';
-  } else if (choice === 'display') {
-    note.className = 'note warn';
-    note.innerHTML = '⚠️ Escolha a <b>janela do jogo</b> (ou uma <b>aba</b>): vem só o som dela e a call do Discord fica de fora. A chave de áudio do seletor já vem ligada; se não vier, ligue. Na <b>tela inteira</b>, vai o som do computador <b>inteiro</b>, incluindo a call. Som de janela precisa de Windows 11 e de Chrome, Edge ou Brave.';
+  if (choice === 'display') {
+    note.className = 'note info';
+    note.innerHTML = 'Escolha a <b>janela do jogo</b> (ou uma aba): vai só o som dela, sem a call do Discord. Na <b>tela inteira</b> vai o som do computador todo, com a call junto.';
+  } else if (choice === 'device') {
+    note.className = 'note info';
+    note.innerHTML = 'Vai só o som do dispositivo escolhido. Com o VB-Cable dá para mandar a tela inteira com o som do jogo, sem a call.';
   } else {
-    note.className = 'note good';
-    note.innerHTML = '✅ Captura só o dispositivo escolhido. Com um cabo virtual (VB-Cable), dá tela inteira com som do jogo e sem a call.';
+    note.className = 'note info';
+    note.innerHTML = $('micOpt').checked ? 'Vai só a sua voz, pelo microfone.' : '';
   }
 }
 
@@ -2139,6 +2211,7 @@ $('btnFecharSom').addEventListener('click', () => $('somBanner').classList.remov
 $('btnConfirmShare').addEventListener('click', async () => {
   const choice = audioChoice();
   const wantMic = $('micOpt').checked;
+  localStorage.setItem('botTelaSom', choice);
   $('shareBackdrop').classList.remove('open');
 
   try {
@@ -2822,8 +2895,8 @@ function buildCamTile(peerId) {
   const tile = document.createElement('div');
   tile.className = 'camtile';
   tile.innerHTML = `<video autoplay playsinline muted></video>
-                    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)">⧉</div>
-                    <div class="fsicon">⛶</div>
+                    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></div>
+                    <div class="fsicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></div>
                     <div class="nm"></div>`;
   tile.title = 'Clique para ver em tela cheia';
   tile.addEventListener('click', () => telaCheia(tile));
@@ -2899,13 +2972,13 @@ let ultimaMedida = null;
 async function lerEstatisticas() {
   const badge = $('statsBadge');
   if (mode !== 'watch' || !watchTarget || watchTarget === myPeerId) {
-    badge.textContent = '';
+    pintarQualidade(null);
     ultimaMedida = null;
     return;
   }
   const call = incomingCalls.get(watchTarget);
   const pc = call && call.peerConnection;
-  if (!pc) { badge.textContent = ''; return; }
+  if (!pc) { pintarQualidade(null); return; }
 
   const st = await pc.getStats();
   let video = null, par = null, local = null, remoto = null;
@@ -2917,7 +2990,7 @@ async function lerEstatisticas() {
     if (r.id === par.localCandidateId) local = r.candidateType;
     if (r.id === par.remoteCandidateId) remoto = r.candidateType;
   });
-  if (!video) { badge.textContent = 'medindo...'; return; }
+  if (!video) { pintarQualidade('medindo', 'Medindo', ''); return; }
 
   // Taxa de dados = diferenca de bytes entre duas leituras.
   let kbps = null;
@@ -2926,26 +2999,62 @@ async function lerEstatisticas() {
     const dTempo = (video.timestamp - ultimaMedida.ts) / 1000;
     kbps = Math.round((dBytes * 8) / dTempo / 1000);
   }
-  ultimaMedida = { bytes: video.bytesReceived, ts: video.timestamp };
+  // Perda de AGORA (entre duas leituras), e nao a acumulada desde o comeco:
+  // e ela que diz se a transmissao esta ruim neste momento.
+  const perdidos = video.packetsLost || 0;
+  const chegaram = video.packetsReceived || 0;
+  let perdaAgora = 0;
+  if (ultimaMedida && ultimaMedida.chegaram !== undefined) {
+    const dPerdidos = Math.max(0, perdidos - ultimaMedida.perdidos);
+    const dChegaram = Math.max(0, chegaram - ultimaMedida.chegaram);
+    if (dPerdidos + dChegaram > 0) perdaAgora = (dPerdidos / (dPerdidos + dChegaram)) * 100;
+  }
+  ultimaMedida = { bytes: video.bytesReceived, ts: video.timestamp, perdidos, chegaram };
 
   const retransmitido = local === 'relay' || remoto === 'relay';
   const fps = Math.round(video.framesPerSecond || 0);
   const largura = video.frameWidth || 0, altura = video.frameHeight || 0;
-  const perdidos = video.packetsLost || 0;
-  const recebidos = (video.packetsReceived || 0) + perdidos;
-  const perda = recebidos ? ((perdidos / recebidos) * 100).toFixed(1) : '0.0';
+  const total = chegaram + perdidos;
+  const perda = total ? ((perdidos / total) * 100).toFixed(1) : '0.0';
 
   const partes = [];
-  partes.push(retransmitido ? '🔁 retransmitido' : '⚡ direto');
-  if (largura) partes.push(`${largura}×${altura}`);
-  partes.push(`${fps} fps`);
-  if (kbps !== null) partes.push(`${kbps} kbps`);
-  if (perdidos) partes.push(`perda ${perda}%`);
+  partes.push(retransmitido ? 'retransmitido' : 'direto');
+  if (largura) partes.push(largura + '×' + altura);
+  partes.push(fps + ' fps');
+  if (kbps !== null) partes.push(kbps + ' kbps');
+  if (perdidos) partes.push('perda ' + perda + '%');
 
-  badge.textContent = partes.join('  ·  ');
-  badge.className = 'stats' + ((fps > 0 && fps < 12) || parseFloat(perda) > 3 ? ' ruim' : '')
-                            + (retransmitido ? ' relay' : '');
+  // Tela parada manda poucos quadros de proposito (e quase nenhum dado), entao
+  // poucos quadros so contam como problema quando ha imagem em movimento.
+  const comMovimento = kbps !== null && kbps >= 200;
+  let nivel = 'boa';
+  if (perdaAgora > 1.5 || (comMovimento && fps > 0 && fps < 20) || (altura > 0 && altura < 400)) nivel = 'instavel';
+  if (perdaAgora > 5 || (comMovimento && fps > 0 && fps < 12)) nivel = 'ruim';
+  pintarQualidade(nivel, { boa: 'Boa', instavel: 'Instável', ruim: 'Ruim' }[nivel], partes.join('  ·  '));
 }
+
+// O selo mostra uma palavra (Boa, Instavel, Ruim). Clicar abre os numeros,
+// que continuam la para quando for preciso investigar um problema.
+let qualidadeAberta = false;
+
+function pintarQualidade(nivel, rotulo, detalhes) {
+  const selo = $('statsBadge');
+  if (!nivel) { selo.style.display = 'none'; return; }
+  selo.style.display = '';
+  selo.className = 'sinal ' + nivel + (qualidadeAberta && detalhes ? ' aberto' : '');
+  selo.querySelector('.rot').textContent = rotulo;
+  selo.querySelector('.det').textContent = detalhes || '';
+  selo.title = 'Qualidade da transmissão' + (detalhes ? ': ' + detalhes + ' (clique para ' + (qualidadeAberta ? 'esconder' : 'ver') + ' os números)' : '');
+}
+
+function alternarNumeros() {
+  qualidadeAberta = !qualidadeAberta;
+  $('statsBadge').classList.toggle('aberto', qualidadeAberta && !!$('statsBadge').querySelector('.det').textContent);
+}
+$('statsBadge').addEventListener('click', alternarNumeros);
+$('statsBadge').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternarNumeros(); }
+});
 
 // Quanto EU estou enviando, somando todas as pessoas que me assistem.
 // E o numero que revela se o gargalo e a minha internet de envio.
@@ -2978,7 +3087,7 @@ async function lerEnvio() {
     });
   }
 
-  const partes = [`⬆ ${Math.round(totalKbps)} kbps para ${outgoing.size}`];
+  const partes = ['enviando ' + Math.round(totalKbps) + ' kbps para ' + outgoing.size];
   if (largura) partes.push(`${largura}×${altura}`);
   if (fpsMin !== null) partes.push(`${fpsMin} fps`);
   badge.textContent = partes.join('  ·  ');
@@ -3025,8 +3134,16 @@ function aplicarVolume() {
   const range = $('volRange'), val = $('volVal');
   if (range && range.value !== String(volume)) range.value = volume;
   if (val) val.textContent = volume + '%';
-  $('btnMute').textContent = (muted || volume === 0)
-    ? '🔇 Som desligado' : '🔊 Som ligado';
+  pintarBotaoDeSom(muted || volume === 0);
+}
+
+// 'pedirClique' e para quando o navegador barrou o som sozinho: ai o icone
+// nao basta, a pessoa precisa saber que tem que clicar.
+function pintarBotaoDeSom(semSom, pedirClique = false) {
+  const botao = $('btnMute');
+  botao.innerHTML = (semSom ? ICO_SOM_OFF : ICO_SOM_ON) + (pedirClique ? '<span>Clique para ligar o som</span>' : '');
+  botao.title = semSom ? 'Som desligado (clique para ligar)' : 'Som ligado (clique para desligar)';
+  botao.classList.toggle('semsom', semSom);
 }
 
 function mudarVolume(delta) {
@@ -3166,7 +3283,7 @@ function buildPersonTile(peerId) {
     <video autoplay playsinline muted></video>
     <div class="avatar"></div>
     <div class="livechip">AO VIVO</div>
-    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)">⧉</div>
+    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></div>
     <div class="viewchip"></div>
     <div class="namechip"></div>
     <button class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">
@@ -3231,7 +3348,7 @@ function renderPeople() {
     if (m.isMe && myStream) {
       vc.style.display = 'block';
       const nomes = [...watchers].map(id2 => (members.get(id2) || {}).name).filter(Boolean);
-      vc.textContent = watchers.size ? `👁 ${watchers.size}` : '👁 0';
+      vc.innerHTML = ICO_OLHO + watchers.size;
       vc.title = nomes.length ? 'Assistindo: ' + nomes.join(', ') : 'Ninguém assistindo ainda';
     } else vc.style.display = 'none';
 
@@ -3263,7 +3380,7 @@ function renderWatch() {
       destino = mm ? mm.name : 'a sala';
     }
   }
-  $('btnBack').textContent = '← Voltar para ' + destino;
+  $('btnBackTxt').textContent = 'Voltar para ' + destino;
 
   mountCam($('watchCam'), watchTarget);
   renderCamStrip();
@@ -3282,12 +3399,12 @@ function renderWatch() {
     msg.classList.remove('on');
   } else if (estado === 'falhou') {
     msg.classList.add('on');
-    msg.innerHTML = `<div class="big">🚫</div>
+    msg.innerHTML = `<div class="big">${ICO_BLOQ}</div>
       <div class="t">Não consegui receber esta transmissão</div>
       <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o botão "Testar conexão" lá em cima para testar.</div>`;
   } else {
     msg.classList.add('on');
-    msg.innerHTML = `<div class="big">⏳</div>
+    msg.innerHTML = `<div class="big">${ICO_ESPERA}</div>
       <div class="t">Conectando à transmissão...</div>
       <div class="d">Se ficar assim por mais de 20 segundos, aparece aqui o motivo.</div>`;
   }
@@ -3302,7 +3419,7 @@ function renderWatch() {
     video.muted = souEu || muted || volume === 0;
     video.play().catch(() => {
       video.muted = true; muted = true;
-      $('btnMute').textContent = '🔇 Som desligado (clique para ligar)';
+      pintarBotaoDeSom(true, true);
       video.play().catch(() => {});
     });
   }
@@ -3342,9 +3459,9 @@ function buildGridTile(peerId) {
   cam.className = 'camoverlay';
   cam.innerHTML = `<video autoplay playsinline muted></video>
     <div class="camctl">
-      <button data-act="pip" title="Pop-up (fica por cima de outras janelas)">⧉</button>
+      <button data-act="pip" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></button>
       <button data-act="size" title="Tamanho">M</button>
-      <button data-act="hide" title="Esconder">✕</button>
+      <button data-act="hide" title="Esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <div class="camhint">arraste para mover</div>`;
   tile.appendChild(cam);
@@ -3359,7 +3476,7 @@ function buildGridTile(peerId) {
     bar.appendChild(b);
   }
   const fs = document.createElement('button');
-  fs.textContent = '⛶';
+  fs.innerHTML = ICO_CHEIA; fs.title = 'Tela cheia';
   fs.addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else tile.requestFullscreen().catch(() => {});
