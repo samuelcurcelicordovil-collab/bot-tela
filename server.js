@@ -375,7 +375,20 @@ const rooms = new Map(); // codigo -> Map(peerId -> { name, broadcasting, loc, w
 // Parar a musica NAO apaga a entrada: ela fica com video nulo, como lapide.
 // Sem isso, quem estava desconectado na hora e voltasse ainda com a faixa
 // antiga reensinaria a sala e a musica "ressuscitaria".
-const musicas = new Map(); // codigo -> { video, tocando, posicao, em, porQuem }
+const musicas = new Map(); // codigo -> { video, tocando, posicao, em, porQuem, acabou }
+
+// A fila de musicas de cada sala, no estilo dos bots de musica do Discord:
+// quem escolhe uma faixa com outra ja tocando entra no fim da fila, e quando
+// a faixa atual acaba o servidor puxa a proxima. A fila mora AQUI, e nao em
+// cada navegador, porque so um lugar pode decidir a ordem e a hora de avancar:
+// quando a musica acaba, todos os navegadores avisam quase ao mesmo tempo.
+const filas = new Map(); // codigo -> [{ uid, id, titulo, canal, capa, porQuem }]
+const LIMITE_FILA = 50;
+let proximoUid = 1;
+
+function mandarFila(room, code) {
+  broadcast(room, { type: 'queue', itens: filas.get(code) || [] });
+}
 
 // A posicao guardada vale para o instante 'em'. Antes de mandar, adiantamos
 // ate AGORA no relogio do servidor: assim o cliente nunca faz conta com o
@@ -383,7 +396,10 @@ const musicas = new Map(); // codigo -> { video, tocando, posicao, em, porQuem }
 // relacao ao dele.
 function musicaAgora(m) {
   const passou = m.tocando ? (Date.now() - m.em) / 1000 : 0;
-  return { type: 'music', video: m.video, tocando: m.tocando, posicao: m.posicao + passou, porQuem: m.porQuem };
+  return {
+    type: 'music', video: m.video, tocando: m.tocando, posicao: m.posicao + passou,
+    porQuem: m.porQuem, acabou: !!m.acabou
+  };
 }
 
 // Tudo que vem do navegador e corta no tamanho — o cliente pode mandar
@@ -497,8 +513,14 @@ roomWss.on('connection', (ws) => {
       const room = rooms.get(myRoom);
       const eu = room && room.get(myId);
       if (!eu) return;
+      const video = limparVideo(msg.video);
+      // Aviso atrasado sobre uma faixa que ja nao e a atual (uma aba antiga
+      // dizendo que a musica ANTERIOR acabou, depois de a fila ja ter andado).
+      // Obedecer faria a sala voltar para a faixa velha, parada.
+      const antes = musicas.get(myRoom);
+      if (video && !msg.tocando && antes && antes.video && antes.video.id !== video.id) return;
       const estado = {
-        video: limparVideo(msg.video),
+        video,
         tocando: !!msg.tocando,
         posicao: Math.max(0, Number(msg.posicao) || 0),
         em: Date.now(),
@@ -506,6 +528,85 @@ roomWss.on('connection', (ws) => {
       };
       musicas.set(myRoom, estado);
       broadcast(room, musicaAgora(estado), myId);
+      return;
+    }
+
+    // Pedir uma musica: com a sala em silencio (ou com a ultima faixa ja
+    // terminada) ela toca na hora; com outra tocando, entra no fim da fila.
+    if (msg.type === 'queue-add' && myRoom) {
+      const room = rooms.get(myRoom);
+      const eu = room && room.get(myId);
+      if (!eu) return;
+      const video = limparVideo(msg.video);
+      if (!video) return;
+      const atual = musicas.get(myRoom);
+      if (!atual || !atual.video || atual.acabou) {
+        const estado = { video, tocando: true, posicao: 0, em: Date.now(), porQuem: eu.name };
+        musicas.set(myRoom, estado);
+        broadcast(room, musicaAgora(estado));
+        return;
+      }
+      if (!filas.has(myRoom)) filas.set(myRoom, []);
+      const fila = filas.get(myRoom);
+      const cabe = fila.length < LIMITE_FILA;
+      if (cabe) fila.push({ uid: proximoUid++, ...video, porQuem: eu.name });
+      mandarFila(room, myRoom);
+      if (!cabe) sendTo(ws, { type: 'queue-full', limite: LIMITE_FILA });
+      // Quem pediu pode ter comecado a tocar a faixa por conta propria, achando
+      // que a sala estava em silencio: devolve o que esta tocando de verdade.
+      if (msg.toquei) sendTo(ws, musicaAgora(atual));
+      return;
+    }
+
+    if (msg.type === 'queue-remove' && myRoom) {
+      const room = rooms.get(myRoom);
+      const fila = filas.get(myRoom);
+      if (!room || !room.get(myId) || !fila) return;
+      const i = fila.findIndex(f => f.uid === Number(msg.uid));
+      if (i < 0) return;
+      fila.splice(i, 1);
+      mandarFila(room, myRoom);
+      return;
+    }
+
+    if (msg.type === 'queue-clear' && myRoom) {
+      const room = rooms.get(myRoom);
+      if (!room || !room.get(myId)) return;
+      filas.set(myRoom, []);
+      mandarFila(room, myRoom);
+      return;
+    }
+
+    // Passar para a proxima da fila. Chega em dois casos: a faixa acabou
+    // (fim: true, avisado pelo navegador de cada pessoa) ou alguem apertou
+    // "Pular". 'de' e a faixa que o navegador acha que esta tocando: so vale
+    // se ainda for a atual, senao cada aviso repetido pularia mais uma musica.
+    if (msg.type === 'music-next' && myRoom) {
+      const room = rooms.get(myRoom);
+      const eu = room && room.get(myId);
+      if (!eu) return;
+      const atual = musicas.get(myRoom);
+      const idAtual = atual && atual.video ? atual.video.id : '';
+      if (String(msg.de || '') !== idAtual) return;
+      const fila = filas.get(myRoom) || [];
+      const proxima = fila.shift();
+      let estado;
+      if (proxima) {
+        const { uid, porQuem, ...video } = proxima;
+        estado = { video, tocando: true, posicao: 0, em: Date.now(), porQuem };
+      } else if (msg.fim) {
+        // Acabou e nao ha proxima: a faixa fica la, parada e marcada como
+        // terminada, para o proximo pedido tocar na hora em vez de ir pra fila.
+        if (!idAtual || atual.acabou) return;
+        estado = { ...atual, tocando: false, posicao: musicaAgora(atual).posicao, em: Date.now(), acabou: true };
+      } else {
+        // Pular sem nada na fila e o mesmo que parar a musica.
+        if (!idAtual) return;
+        estado = { video: null, tocando: false, posicao: 0, em: Date.now(), porQuem: eu.name };
+      }
+      musicas.set(myRoom, estado);
+      broadcast(room, musicaAgora(estado));
+      if (proxima) mandarFila(room, myRoom);
       return;
     }
 
@@ -545,12 +646,24 @@ roomWss.on('connection', (ws) => {
           tocando: !!msg.musicaTocando,
           posicao: Math.max(0, Number(msg.musicaPos) || 0),
           em: Date.now(),
-          porQuem: name
+          porQuem: name,
+          acabou: !!msg.musicaAcabou
         };
         musicas.set(code, semeada);
         // Quem ja estava na sala tambem precisa saber, senao so os proximos
         // a entrar ouviriam essa faixa.
         broadcast(room, musicaAgora(semeada));
+      }
+      // A mesma regra vale para a fila: se o servidor reiniciou e nao sabe
+      // nada da fila desta sala, o primeiro que volta traz a que ele tinha.
+      if (Array.isArray(msg.fila) && msg.fila.length && !filas.has(code)) {
+        const trazidas = [];
+        msg.fila.slice(0, LIMITE_FILA).forEach(item => {
+          const v = limparVideo(item);
+          if (v) trazidas.push({ uid: proximoUid++, ...v, porQuem: String((item && item.porQuem) || name).slice(0, 24) });
+        });
+        filas.set(code, trazidas);
+        mandarFila(room, code);
       }
 
       sendTo(ws, { type: 'join-ok', you: myId, room: code, members: listMembers(room) });
@@ -558,6 +671,9 @@ roomWss.on('connection', (ws) => {
       // Cai direto no ponto certo da musica que a sala ja estava ouvindo.
       const musica = musicas.get(code);
       if (musica && musica.video) sendTo(ws, musicaAgora(musica));
+      // Sempre manda a fila, mesmo vazia: quem volta de uma queda pode estar
+      // com uma lista antiga na tela.
+      sendTo(ws, { type: 'queue', itens: filas.get(code) || [] });
 
       const existed = room.has(myId);
       room.set(myId, { name, broadcasting, camOn, loc, ws });
@@ -636,7 +752,7 @@ roomWss.on('connection', (ws) => {
     if (!atual || atual.ws !== ws) return;
     room.delete(myId);
     broadcast(room, { type: 'member-left', peerId: myId });
-    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); }
+    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); filas.delete(myRoom); }
     console.log(`[sala ${myRoom}] alguem saiu (${room.size} restantes)`);
   });
 });

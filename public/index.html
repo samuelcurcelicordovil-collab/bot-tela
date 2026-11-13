@@ -212,6 +212,41 @@
   #musicForm { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #2f3136; }
   #musicQuery { min-width: 0; flex: 1; padding: 9px; font-size: .85rem; }
   #musicForm button { padding: 8px 12px; }
+  /* Fila de musicas: as proximas a tocar, na ordem */
+  #musicQueue { border-top: 1px solid #2f3136; }
+  .queuehead { display: flex; align-items: center; gap: 6px; padding: 8px 10px 4px 12px; }
+  .queuehead .t {
+    flex: 1; font-size: .7rem; font-weight: 700; color: #9aa0a6;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .queuehead button { padding: 4px 9px; font-size: .72rem; border-radius: 6px; background: #2b2d31; }
+  .queuehead button:hover { background: #3a3c42; }
+  #queueList { max-height: 112px; overflow-y: auto; padding-bottom: 4px; }
+  .qitem { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px; }
+  .qitem:hover { background: #2b2d31; }
+  .qitem .n {
+    width: 14px; flex: none; text-align: right; font-size: .7rem; color: #9aa0a6;
+    font-variant-numeric: tabular-nums;
+  }
+  .qitem img { width: 36px; height: 27px; object-fit: cover; border-radius: 4px; flex: none; background: #1a1b1e; }
+  .qitem .txt { flex: 1; min-width: 0; }
+  .qitem .t, .qitem .c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qitem .t { font-size: .76rem; color: #e3e5e8; }
+  .qitem .c { font-size: .67rem; color: #9aa0a6; margin-top: 1px; }
+  .qitem button, .mres .agora {
+    flex: none; width: 26px; height: 26px; padding: 0; border-radius: 50%;
+    background: transparent; color: #9aa0a6;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .qitem button:hover, .mres .agora:hover { background: #3a3c42; color: #fff; }
+  .qitem button svg, .mres .agora svg { width: 13px; height: 13px; }
+  .mres .txt { flex: 1; min-width: 0; }
+  /* Com a busca aberta, a lista da fila se recolhe (o cabecalho com a contagem
+     fica): os dois abertos juntos deixavam o painel alto demais e empurravam
+     o chat para fora da tela. Em monitores bem altos cabe tudo. */
+  @media (max-height: 1150px) {
+    #musicQueue:has(+ #musicResults:not(:empty)) #queueList { display: none; }
+  }
 
   /* ---------- CHAT DA SALA ---------- */
   #chatPanel {
@@ -589,6 +624,14 @@
         <input type="range" id="musicVol" min="0" max="100" value="60" title="Volume da música (só pra você)">
       </div>
       <button id="btnMusicUnlock">🔊 Toque para ouvir</button>
+      <div id="musicQueue" style="display:none">
+        <div class="queuehead">
+          <span class="t" id="queueTitle">Fila</span>
+          <button id="btnQueueSkip" title="Pular para a próxima música da fila">Pular</button>
+          <button id="btnQueueClear" title="Tirar todas as músicas da fila">Limpar</button>
+        </div>
+        <div id="queueList"></div>
+      </div>
       <div id="musicResults"></div>
       <form id="musicForm">
         <input type="text" id="musicQuery" placeholder="Pesquisar música..." autocomplete="off" maxlength="100">
@@ -1183,6 +1226,8 @@ let ytPlayer = null;
 let ytPronto = false;
 let musicaAtual = null;       // { id, titulo, canal, capa }
 let musicaTocando = false;
+let musicaAcabou = false;     // a faixa atual ja tocou ate o fim
+let fila = [];                // proximas a tocar; quem manda na ordem e o servidor
 let ultimoSync = null;        // { posicao, em } — referencia pra corrigir deriva
 let aplicandoRemoto = false;  // mudanca vinda da sala nao pode voltar pra sala
 let arrastandoSeek = false;
@@ -1228,7 +1273,12 @@ function criarPlayer() {
       // resolve e o botao "Toque para ouvir", so para aquela pessoa.
       onStateChange: (e) => {
         if (aplicandoRemoto) return;
-        if (e.data === YT.PlayerState.ENDED) definirTocando(false, true);
+        if (e.data === YT.PlayerState.ENDED) avisarFimDaFaixa();
+      },
+      // 100 = video removido; 101 e 150 = o dono nao deixa tocar fora do
+      // YouTube. Sem isto, uma faixa que nao toca travava a fila para sempre.
+      onError: (e) => {
+        if ([100, 101, 150].includes(e.data)) avisarFimDaFaixa();
       }
     }
   });
@@ -1285,6 +1335,7 @@ function receberMusica(msg) {
   const mudouFaixa = idNovo !== (musicaAtual && musicaAtual.id);
   musicaAtual = msg.video || null;
   musicaTocando = !!msg.tocando;
+  musicaAcabou = !!msg.acabou;
   // O servidor ja manda a posicao adiantada ate o momento do envio, entao a
   // referencia de tempo e o NOSSO relogio, na chegada. Usar o horario do
   // servidor deixava quem tem o relogio do PC desacertado fora de sincronia.
@@ -1297,23 +1348,32 @@ function receberMusica(msg) {
 
 function definirTocando(on, jaAplicado = false) {
   musicaTocando = on;
-  ultimoSync = { posicao: posicaoAtual(), em: Date.now() };
+  // Dar play numa faixa que ja terminou e tocar de novo, do comeco. Sem isto
+  // a sala recebia "tocando, no ultimo segundo" e a musica acabava de novo.
+  const recomecar = on && musicaAcabou;
+  musicaAcabou = false;
+  ultimoSync = { posicao: recomecar ? 0 : posicaoAtual(), em: Date.now() };
   // O meu player tambem tem que obedecer. Sem isto, apertar pausa avisava a
   // sala inteira e a musica parava pra todo mundo menos pra quem apertou.
   // 'jaAplicado' e pra quando a ordem veio do proprio player (o usuario mexeu
   // nele direto, ou a faixa acabou): ai nao ha nada pra reaplicar.
   if (!jaAplicado && ytPronto) {
     aplicandoRemoto = true;
-    try { if (on) ytPlayer.playVideo(); else ytPlayer.pauseVideo(); } catch {}
+    try {
+      if (recomecar) ytPlayer.seekTo(0, true);
+      if (on) ytPlayer.playVideo(); else ytPlayer.pauseVideo();
+    } catch {}
     destravarDepois();
   }
   renderMusica();
   enviarMusica();
 }
 
+// Toca AGORA, passando na frente do que estiver tocando. A fila nao muda.
 function tocarFaixa(video) {
   musicaAtual = video;
   musicaTocando = true;
+  musicaAcabou = false;
   ultimoSync = { posicao: 0, em: Date.now() };
   renderMusica();
   carregarYT();
@@ -1322,6 +1382,94 @@ function tocarFaixa(video) {
   $('musicResults').innerHTML = '';
   $('musicQuery').value = '';
 }
+
+// ============================================================
+// FILA DE MUSICAS (como nos bots de musica do Discord)
+//
+// Escolher uma musica com a sala em silencio toca na hora; com outra tocando,
+// ela entra no fim da fila. Quando a faixa acaba, o servidor puxa a proxima.
+// A fila mora no servidor: o navegador so pede (adicionar, tirar, limpar,
+// pular) e mostra a lista que o servidor devolve.
+// ============================================================
+function salaOnline() { return ws && ws.readyState === ws.OPEN; }
+
+function pedirMusica(video) {
+  if (!salaOnline()) return tocarFaixa(video);
+  const livre = !musicaAtual || musicaAcabou;
+  if (livre) {
+    // Comeca a tocar ja, dentro do clique: o iPhone so deixa tocar assim.
+    musicaAtual = video;
+    musicaTocando = true;
+    musicaAcabou = false;
+    ultimoSync = { posicao: 0, em: Date.now() };
+    renderMusica();
+    carregarYT();
+    if (ytPronto) aplicarEstadoMusica(true);
+  }
+  ws.send(JSON.stringify({ type: 'queue-add', video, toquei: livre }));
+  $('musicResults').innerHTML = '';
+  $('musicQuery').value = '';
+}
+
+// A faixa chegou ao fim (ou nao pode ser tocada): quem decide o que vem
+// depois e o servidor. Todos os navegadores avisam, e ele so ouve o primeiro.
+function avisarFimDaFaixa() {
+  if (!musicaAtual) return;
+  if (salaOnline()) {
+    ws.send(JSON.stringify({ type: 'music-next', de: musicaAtual.id, fim: true }));
+  } else {
+    musicaAcabou = true;
+    definirTocando(false, true);
+  }
+}
+
+function receberFila(msg) {
+  fila = Array.isArray(msg.itens) ? msg.itens : [];
+  renderFila();
+}
+
+const ICO_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+function renderFila() {
+  $('musicQueue').style.display = fila.length ? '' : 'none';
+  $('queueTitle').textContent = 'Fila · ' + fila.length;
+  const lista = $('queueList');
+  lista.innerHTML = '';
+  fila.forEach((item, i) => {
+    const linha = document.createElement('div');
+    linha.className = 'qitem';
+    const n = document.createElement('span');
+    n.className = 'n'; n.textContent = i + 1;
+    const img = document.createElement('img');
+    img.alt = ''; img.loading = 'lazy';
+    img.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(item.id) + '/default.jpg';
+    const txt = document.createElement('div');
+    txt.className = 'txt';
+    const titulo = document.createElement('div');
+    titulo.className = 't'; titulo.textContent = item.titulo; titulo.title = item.titulo;
+    const quem = document.createElement('div');
+    quem.className = 'c'; quem.textContent = item.porQuem ? 'pedida por ' + item.porQuem : item.canal;
+    txt.append(titulo, quem);
+    const tirar = document.createElement('button');
+    tirar.title = 'Tirar da fila';
+    tirar.innerHTML = ICO_X;
+    tirar.addEventListener('click', () => {
+      if (salaOnline()) ws.send(JSON.stringify({ type: 'queue-remove', uid: item.uid }));
+    });
+    linha.append(n, img, txt, tirar);
+    lista.appendChild(linha);
+  });
+}
+
+$('btnQueueSkip').addEventListener('click', () => {
+  if (!salaOnline()) return;
+  carregarYT();
+  ws.send(JSON.stringify({ type: 'music-next', de: musicaAtual ? musicaAtual.id : '', fim: false }));
+});
+
+$('btnQueueClear').addEventListener('click', () => {
+  if (salaOnline()) ws.send(JSON.stringify({ type: 'queue-clear' }));
+});
 
 const ICO_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
 const ICO_PAUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
@@ -1367,7 +1515,7 @@ $('btnMusicUnlock').addEventListener('click', () => {
 $('btnMusicPlay').addEventListener('click', () => definirTocando(!musicaTocando));
 
 $('btnMusicStop').addEventListener('click', () => {
-  musicaAtual = null; musicaTocando = false; ultimoSync = null;
+  musicaAtual = null; musicaTocando = false; musicaAcabou = false; ultimoSync = null;
   renderMusica();
   pararPlayer();
   enviarMusica();
@@ -1414,17 +1562,37 @@ $('musicForm').addEventListener('submit', async e => {
       return;
     }
     caixa.innerHTML = '';
+    // Com musica tocando, clicar numa faixa poe ela na fila; o botao de play
+    // ao lado toca na hora, passando na frente.
+    const vaiPraFila = !!musicaAtual && !musicaAcabou;
+    if (vaiPraFila) {
+      const dica = document.createElement('div');
+      dica.className = 'musicmsg';
+      dica.textContent = 'Clique numa música para pôr na fila. O botão ao lado toca na hora.';
+      caixa.appendChild(dica);
+    }
     d.itens.forEach(it => {
       const linha = document.createElement('div');
       linha.className = 'mres';
+      linha.title = vaiPraFila ? 'Pôr na fila' : 'Tocar';
       const img = document.createElement('img');
       img.src = it.capa; img.alt = '';
       const txt = document.createElement('div');
+      txt.className = 'txt';
       const t = document.createElement('div'); t.className = 't'; t.textContent = it.titulo;
       const c = document.createElement('div'); c.className = 'c'; c.textContent = it.canal;
       txt.append(t, c);
       linha.append(img, txt);
-      linha.addEventListener('click', () => tocarFaixa(it));
+      if (vaiPraFila) {
+        const agora = document.createElement('button');
+        agora.type = 'button';
+        agora.className = 'agora';
+        agora.title = 'Tocar agora (passa na frente da fila)';
+        agora.innerHTML = ICO_PLAY;
+        agora.addEventListener('click', ev => { ev.stopPropagation(); tocarFaixa(it); });
+        linha.appendChild(agora);
+      }
+      linha.addEventListener('click', () => pedirMusica(it));
       caixa.appendChild(linha);
     });
   } catch (err) {
@@ -1609,7 +1777,8 @@ function connectWS() {
       broadcasting: !!myStream, camOn: !!myCam, loc: minhaLoc,
       // Levo junto a faixa que estou tocando: se o WebSocket caiu no momento
       // em que eu escolhi a musica, e aqui que a sala fica sabendo dela.
-      musica: musicaAtual, musicaTocando, musicaPos: posicaoEsperada()
+      musica: musicaAtual, musicaTocando, musicaPos: posicaoEsperada(),
+      musicaAcabou, fila
     }));
     // Keepalive: trafego constante impede tuneis (ngrok) de derrubar por ociosidade.
     clearInterval(pingTimer);
@@ -1646,6 +1815,20 @@ function handleMsg(msg) {
 
   if (msg.type === 'music') {
     receberMusica(msg);
+    return;
+  }
+
+  if (msg.type === 'queue') {
+    receberFila(msg);
+    return;
+  }
+
+  if (msg.type === 'queue-full') {
+    $('musicResults').innerHTML = '';
+    const aviso = document.createElement('div');
+    aviso.className = 'musicmsg';
+    aviso.textContent = 'A fila está cheia (' + msg.limite + ' músicas). Tire alguma para pôr outra.';
+    $('musicResults').appendChild(aviso);
     return;
   }
 
