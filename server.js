@@ -390,6 +390,19 @@ function mandarFila(room, code) {
   broadcast(room, { type: 'queue', itens: filas.get(code) || [] });
 }
 
+// Botao fujao: brincadeira em que os botoes do site fogem do mouse de uma
+// pessoa. E secreta: o comando nao vira mensagem de chat, so quem ligou recebe
+// confirmacao e o alvo nao fica sabendo quem foi. O alvo e guardado pelo NOME,
+// entao recarregar a pagina nao livra ninguem; desliga pelo mesmo comando ou
+// sozinho quando quem ligou sai da sala.
+const fujoes = new Map(); // codigo -> Map(nome normalizado -> { nome, por: peerId de quem ligou })
+function nomeChave(n) {
+  return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
+function avisarFujao(room, chave, ligado) {
+  room.forEach(m => { if (nomeChave(m.name) === chave) sendTo(m.ws, { type: 'fujao', ligado }); });
+}
+
 // A posicao guardada vale para o instante 'em'. Antes de mandar, adiantamos
 // ate AGORA no relogio do servidor: assim o cliente nunca faz conta com o
 // horario do servidor, que pode estar segundos adiantado ou atrasado em
@@ -610,6 +623,40 @@ roomWss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'fujao' && myRoom) {
+      const room = rooms.get(myRoom);
+      if (!room || !room.get(myId)) return;
+      if (!fujoes.has(myRoom)) fujoes.set(myRoom, new Map());
+      const ativos = fujoes.get(myRoom);
+      const membros = [...room.values()];
+      let chave = nomeChave(String(msg.alvo || '').slice(0, 40).replace(/^@/, ''));
+      if (!chave) {
+        sendTo(ws, { type: 'fujao-info', ativos: [...ativos.values()].map(a => a.nome) });
+        return;
+      }
+      // Nome incompleto ("red" para "Red 🔥") vale se so uma pessoa combinar.
+      if (!ativos.has(chave) && !membros.some(m => nomeChave(m.name) === chave)) {
+        const parecidos = new Set(membros.map(m => nomeChave(m.name)).filter(k => k.startsWith(chave)));
+        if (parecidos.size === 1) chave = [...parecidos][0];
+      }
+      if (ativos.has(chave)) {
+        const { nome } = ativos.get(chave);
+        ativos.delete(chave);
+        avisarFujao(room, chave, false);
+        sendTo(ws, { type: 'fujao-ok', ligado: false, alvo: nome });
+        return;
+      }
+      const alvo = membros.find(m => nomeChave(m.name) === chave);
+      if (!alvo) {
+        sendTo(ws, { type: 'fujao-ok', erro: true, alvo: String(msg.alvo || '').slice(0, 24), nomes: membros.map(m => m.name) });
+        return;
+      }
+      ativos.set(chave, { nome: alvo.name, por: myId });
+      avisarFujao(room, chave, true);
+      sendTo(ws, { type: 'fujao-ok', ligado: true, alvo: alvo.name });
+      return;
+    }
+
     if (msg.type === 'join') {
       if (!tokenValido(msg.token)) {
         sendTo(ws, { type: 'auth-fail' });
@@ -677,6 +724,8 @@ roomWss.on('connection', (ws) => {
 
       const existed = room.has(myId);
       room.set(myId, { name, broadcasting, camOn, loc, ws });
+      const fj = fujoes.get(code);
+      if (fj && fj.has(nomeChave(name))) sendTo(ws, { type: 'fujao', ligado: true });
       broadcast(room, {
         type: existed ? 'member-updated' : 'member-joined',
         member: { peerId: myId, name, broadcasting, camOn, loc }
@@ -752,7 +801,9 @@ roomWss.on('connection', (ws) => {
     if (!atual || atual.ws !== ws) return;
     room.delete(myId);
     broadcast(room, { type: 'member-left', peerId: myId });
-    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); filas.delete(myRoom); }
+    const fj = fujoes.get(myRoom);
+    if (fj) fj.forEach((a, chave) => { if (a.por === myId) { fj.delete(chave); avisarFujao(room, chave, false); } });
+    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); filas.delete(myRoom); fujoes.delete(myRoom); }
     console.log(`[sala ${myRoom}] alguem saiu (${room.size} restantes)`);
   });
 });

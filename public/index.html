@@ -267,6 +267,8 @@
     display: block; max-width: 100%; max-height: 180px; margin-top: 4px;
     border-radius: 8px; cursor: pointer; background: #1a1b1e;
   }
+  .chatmsg.particular .chatname { color: #8b95ff; }
+  .chatmsg.particular .chattext { color: #b5bac1; font-style: italic; }
   .chatempty { color: #6a6f76; font-size: .82rem; text-align: center; padding: 20px 8px; }
   #chatForm { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #2f3136; }
   #chatInput { min-width: 0; padding: 9px; }
@@ -1260,10 +1262,136 @@ $('chatForm').addEventListener('submit', e => {
   const input = $('chatInput');
   const text = input.value.trim();
   if (!text || !ws || ws.readyState !== ws.OPEN) return;
-  ws.send(JSON.stringify({ type: 'chat', text }));
   input.value = '';
   input.focus();
+  // Comando secreto: vai so para o servidor e nunca aparece no chat de ninguem.
+  const fujao = text.match(/^\/fuj[aã]o(?:\s+(.*))?$/i);
+  if (fujao) {
+    ws.send(JSON.stringify({ type: 'fujao', alvo: (fujao[1] || '').trim() }));
+    return;
+  }
+  ws.send(JSON.stringify({ type: 'chat', text }));
 });
+
+// Linha no chat que so eu vejo (resposta do comando). Some sozinha, para nao
+// ficar na tela caso eu esteja transmitindo a janela do navegador.
+function avisoParticular(texto) {
+  const area = $('chatMessages');
+  const item = document.createElement('div');
+  item.className = 'chatmsg particular';
+  const nome = document.createElement('div');
+  nome.className = 'chatname';
+  nome.textContent = 'Só você vê isto';
+  const div = document.createElement('div');
+  div.className = 'chattext';
+  div.textContent = texto;
+  item.append(nome, div);
+  area.appendChild(item);
+  area.scrollTop = area.scrollHeight;
+  setTimeout(() => item.remove(), 8000);
+}
+
+// ============================================================
+// BOTAO FUJAO
+//
+// Brincadeira secreta, ligada pelo comando /fujao no chat: na tela do alvo,
+// os botoes fogem quando o mouse chega perto, e metade dos cliques escapa.
+// O teclado (Tab + Enter) continua funcionando. So mexe na posicao visual
+// (a propriedade CSS translate), nunca no que o botao faz, e tudo volta ao
+// lugar quando desliga.
+// ============================================================
+const FUJAO_ALVOS = 'button, [role=button], label.somcard, select';
+const FUJAO_RAIO = 70;        // px entre o mouse e a borda do botao
+let fujaoLigado = false;
+let fujaoMouse = null;
+let fujaoQuadro = 0;
+const fujaoPos = new Map();   // elemento -> { x, y, volta }
+
+function ligarFujao() {
+  if (fujaoLigado) return;
+  fujaoLigado = true;
+  document.addEventListener('pointermove', fujaoMovimento, { passive: true });
+  document.addEventListener('click', fujaoClique, true);
+}
+
+function desligarFujao() {
+  fujaoLigado = false;
+  document.removeEventListener('pointermove', fujaoMovimento);
+  document.removeEventListener('click', fujaoClique, true);
+  cancelAnimationFrame(fujaoQuadro);
+  fujaoQuadro = 0;
+  fujaoPos.forEach((p, el) => { clearTimeout(p.volta); voltarParaCasa(el); });
+  fujaoPos.clear();
+}
+
+function fujaoMovimento(e) {
+  fujaoMouse = { x: e.clientX, y: e.clientY };
+  if (!fujaoQuadro) fujaoQuadro = requestAnimationFrame(fujaoPasso);
+}
+
+function fujaoPasso() {
+  fujaoQuadro = 0;
+  if (!fujaoLigado || !fujaoMouse) return;
+  const { x, y } = fujaoMouse;
+  // Mede todos primeiro e so depois mexe: medir e mexer alternado trava a pagina.
+  const perto = [];
+  document.querySelectorAll(FUJAO_ALVOS).forEach(el => {
+    // Botao de janela fechada fica quieto (ela esta so transparente, nao sumida).
+    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const dx = Math.max(r.left - x, 0, x - r.right);
+    const dy = Math.max(r.top - y, 0, y - r.bottom);
+    if (Math.hypot(dx, dy) <= FUJAO_RAIO) perto.push([el, r]);
+  });
+  perto.forEach(([el, r]) => fugir(el, r, x, y));
+}
+
+function fugir(el, r, x, y) {
+  const p = fujaoPos.get(el) || { x: 0, y: 0, volta: 0 };
+  // Para longe do mouse, com um desvio sorteado para nao ser previsivel.
+  const ang = Math.atan2(r.top + r.height / 2 - y, r.left + r.width / 2 - x) + (Math.random() - 0.5) * 1.4;
+  const passo = 90 + Math.random() * 80;
+  let mx = Math.cos(ang) * passo;
+  let my = Math.sin(ang) * passo;
+  // Nao sai da tela: batendo na borda, pula para o outro lado.
+  const M = 8, W = innerWidth, H = innerHeight;
+  if (r.left + mx < M || r.right + mx > W - M) mx = -mx;
+  if (r.top + my < M || r.bottom + my > H - M) my = -my;
+  mx = Math.min(Math.max(mx, M - r.left), W - M - r.right);
+  my = Math.min(Math.max(my, M - r.top), H - M - r.bottom);
+  p.x += mx;
+  p.y += my;
+  // Longe demais de onde mora: reaparece perto de casa, num ponto sorteado.
+  if (Math.hypot(p.x, p.y) > 380) {
+    p.x = (Math.random() - 0.5) * 160;
+    p.y = (Math.random() - 0.5) * 90;
+  }
+  el.style.transition = 'translate .12s ease-out';
+  el.style.translate = Math.round(p.x) + 'px ' + Math.round(p.y) + 'px';
+  clearTimeout(p.volta);
+  // Com o mouse longe por um tempo, o botao volta para o lugar.
+  p.volta = setTimeout(() => { fujaoPos.delete(el); voltarParaCasa(el); }, 2500);
+  fujaoPos.set(el, p);
+}
+
+function voltarParaCasa(el) {
+  el.style.transition = 'translate .5s ease';
+  el.style.translate = '';
+  // Devolve a transicao do proprio botao (cor ao passar o mouse etc).
+  setTimeout(() => { if (!fujaoPos.has(el)) el.style.transition = ''; }, 550);
+}
+
+// Metade dos cliques de mouse ou dedo escapa. Clique de teclado (detail 0) e
+// clique feito pelo proprio site sempre passam.
+function fujaoClique(e) {
+  if (!fujaoLigado || !e.isTrusted || e.detail === 0) return;
+  const el = e.target.closest && e.target.closest(FUJAO_ALVOS);
+  if (!el || Math.random() < 0.5) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  fugir(el, el.getBoundingClientRect(), e.clientX, e.clientY);
+}
 
 // ============================================================
 // MUSICA DA SALA (jukebox sincronizada)
@@ -1871,6 +1999,28 @@ function connectWS() {
 function handleMsg(msg) {
   if (msg.type === 'pong') return;
 
+  if (msg.type === 'fujao') {
+    if (msg.ligado) ligarFujao(); else desligarFujao();
+    return;
+  }
+
+  if (msg.type === 'fujao-ok') {
+    if (msg.erro) {
+      avisoParticular('Ninguém com o nome "' + msg.alvo + '" na sala. Quem está aqui: ' + (msg.nomes || []).join(', ') + '.');
+    } else {
+      avisoParticular('Botão fujão ' + (msg.ligado ? 'ligado' : 'desligado') + ' em ' + msg.alvo + '.'
+        + (msg.ligado ? ' Mande o mesmo comando para desligar.' : ''));
+    }
+    return;
+  }
+
+  if (msg.type === 'fujao-info') {
+    avisoParticular(msg.ativos && msg.ativos.length
+      ? 'Botão fujão ligado em: ' + msg.ativos.join(', ') + '. Mande /fujao e o nome para desligar.'
+      : 'Escreva /fujao e o nome da pessoa para ligar. O mesmo comando desliga.');
+    return;
+  }
+
   if (msg.type === 'chat') {
     adicionarMensagemChat(msg);
     return;
@@ -1903,6 +2053,7 @@ function handleMsg(msg) {
   }
 
   if (msg.type === 'join-ok') {
+    desligarFujao();
     members.clear();
     msg.members.forEach(m => members.set(m.peerId, {
       name: m.name, broadcasting: m.broadcasting, camOn: m.camOn, loc: m.loc || null
