@@ -396,6 +396,11 @@ function mandarFila(room, code) {
 // entao recarregar a pagina nao livra ninguem; desliga pelo mesmo comando ou
 // sozinho quando quem ligou sai da sala.
 const fujoes = new Map(); // codigo -> Map(nome normalizado -> { nome, por: peerId de quem ligou })
+
+// Dado d20: quem sorteia e o servidor, para ninguem forjar o numero pelo
+// console do navegador. Entre uma rolagem e outra da mesma pessoa: a animacao
+// (~0,7s) mais os 3s de espera depois do resultado, com uma folga pequena.
+const DADO_INTERVALO_MS = 3500;
 function nomeChave(n) {
   return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 }
@@ -496,6 +501,7 @@ roomWss.on('error', (err) => registrar('ERRO NO WEBSOCKET', err && err.message))
 roomWss.on('connection', (ws) => {
   let myRoom = null;
   let myId = null;
+  let ultimoDado = 0;
   // Um socket que da erro sem tratamento derruba o processo inteiro.
   ws.on('error', (err) => registrar('ERRO DE CONEXAO', err && err.message));
   ws.isAlive = true;
@@ -516,6 +522,16 @@ roomWss.on('connection', (ws) => {
       if (room && text) {
         broadcast(room, { type: 'chat', peerId: myId, name: room.get(myId)?.name || 'Anônimo', text });
       }
+      return;
+    }
+
+    if (msg.type === 'dado' && myRoom) {
+      const room = rooms.get(myRoom);
+      const eu = room && room.get(myId);
+      const agora = Date.now();
+      if (!eu || agora - ultimoDado < DADO_INTERVALO_MS) return;
+      ultimoDado = agora;
+      broadcast(room, { type: 'dado', peerId: myId, name: eu.name || 'Anônimo', valor: crypto.randomInt(1, 21) });
       return;
     }
 

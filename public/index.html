@@ -570,6 +570,51 @@
   .ctl button.stop:hover { background: #a12828; }
   .ctl .lbl { font-size: .68rem; color: #9aa0a6; }
 
+  /* ---------- DADO d20 (canto inferior esquerdo) ---------- */
+  .ctl.dadoctl { position: absolute; left: 20px; top: 12px; }
+  #btnDado .num { display: none; font-size: 1.15rem; font-weight: 800; }
+  #btnDado.mostrando svg { display: none; }
+  #btnDado.mostrando .num { display: block; }
+  #btnDado.rolando svg { animation: dadoGira .7s cubic-bezier(.2, .7, .3, 1); }
+  @keyframes dadoGira {
+    from { transform: rotate(0deg) scale(.75); }
+    to   { transform: rotate(720deg) scale(1); }
+  }
+  #btnDado.espera { cursor: default; }
+  #btnDado.espera:hover { background: #383a40; }
+  #btnDado.crit { color: #f0c94a; }
+  #btnDado.falha { color: #f4767a; }
+  /* Anel que vai esvaziando durante os 3s de espera. */
+  @property --dado-resta { syntax: '<number>'; inherits: false; initial-value: 0; }
+  #btnDado::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+    background: conic-gradient(#5865f2 calc(var(--dado-resta) * 1turn), transparent 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  }
+  #btnDado.espera::after { animation: dadoEspera 3s linear forwards; }
+  @keyframes dadoEspera { from { --dado-resta: 1; } to { --dado-resta: 0; } }
+
+  /* Resultado no chat: aparece para a sala toda. */
+  .chatmsg.dado .dadolinha {
+    margin-top: 3px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+    padding: 6px 10px; font-size: .84rem; color: #c9cdd3;
+  }
+  .chatmsg.dado .dadolinha svg { width: 18px; height: 18px; color: #8b95ff; flex: none; }
+  .chatmsg.dado .dadoval {
+    min-width: 2ch; text-align: center; font-size: 1.15rem; font-weight: 800; color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .chatmsg.dado .dadoval.girando { color: #6d7178; }
+  .chatmsg.dado .dadotag { font-size: .68rem; font-weight: 800; padding: 2px 7px; border-radius: 4px; }
+  .chatmsg.dado.crit .dadolinha { border-color: #9a7b1c; background: #2f2a1a; }
+  .chatmsg.dado.crit .dadoval { color: #f0c94a; }
+  .chatmsg.dado.crit .dadotag { background: #f0c94a; color: #1e1f22; }
+  .chatmsg.dado.falha .dadolinha { border-color: #7a2a2d; background: #2e1c1d; }
+  .chatmsg.dado.falha .dadoval { color: #f4767a; }
+  .chatmsg.dado.falha .dadotag { background: #da373c; color: #fff; }
+
   /* ---------- MODAIS ---------- */
   /* opacity em vez de display:none — da pra fazer fade na troca entre telas. */
   .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex;
@@ -770,6 +815,13 @@
   </div>
 
   <div id="controls">
+    <div class="ctl dadoctl">
+      <button id="btnDado" title="Rolar um d20 (o resultado aparece no chat para todo mundo)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 20.5 7v10L12 22l-8.5-5V7z"/><path d="M12 9l5 7.5H7z"/><path d="M12 2v7M3.5 7 12 9l8.5-2M3.5 7 7 16.5l-3.5.5M7 16.5 12 22l5-5.5M20.5 7 17 16.5l3.5.5"/></svg>
+        <span class="num"></span>
+      </button>
+      <span class="lbl" id="dadoLbl">Dado</span>
+    </div>
     <div class="ctl">
       <button id="btnCam" title="Ligar/desligar câmera">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
@@ -1296,6 +1348,102 @@ function avisoParticular(texto) {
   area.appendChild(item);
   area.scrollTop = area.scrollHeight;
   setTimeout(() => item.remove(), 8000);
+}
+
+// ============================================================
+// DADO d20
+//
+// O clique so PEDE a rolagem: o numero e sorteado no servidor e chega igual
+// para a sala toda, no chat, com o nome de quem rolou. Depois de mostrar o
+// resultado, o dado de quem rolou espera 3s (o servidor tambem confere).
+// ============================================================
+const DADO_GIRO_MS = 700;
+const DADO_ESPERA_MS = 3000;
+const ICO_D20 = $('btnDado').querySelector('svg').outerHTML;
+let dadoOcupado = false;
+let dadoSemResposta = null;
+
+$('btnDado').addEventListener('click', () => {
+  if (dadoOcupado || !ws || ws.readyState !== ws.OPEN) return;
+  dadoOcupado = true;
+  const b = $('btnDado');
+  b.classList.remove('mostrando', 'crit', 'falha', 'rolando');
+  void b.offsetWidth; // recomeca a animacao de giro
+  b.classList.add('rolando');
+  ws.send(JSON.stringify({ type: 'dado' }));
+  // Sem resposta (conexao caiu, ou o servidor achou cedo demais): libera.
+  clearTimeout(dadoSemResposta);
+  dadoSemResposta = setTimeout(liberarDado, 4000);
+});
+
+function liberarDado() {
+  clearTimeout(dadoSemResposta);
+  dadoOcupado = false;
+  $('btnDado').classList.remove('rolando', 'mostrando', 'espera', 'crit', 'falha');
+  $('dadoLbl').textContent = 'Dado';
+}
+
+function receberDado(msg) {
+  const valor = Math.min(20, Math.max(1, Math.round(Number(msg.valor)) || 1));
+  const area = $('chatMessages');
+  const vazio = area.querySelector('.chatempty');
+  if (vazio) vazio.remove();
+
+  const item = document.createElement('div');
+  item.className = 'chatmsg dado';
+  const nome = document.createElement('div');
+  nome.className = 'chatname';
+  nome.textContent = msg.name || 'Anônimo';   // nome sempre como TEXTO
+  const linha = document.createElement('div');
+  linha.className = 'dadolinha';
+  linha.innerHTML = ICO_D20;
+  const rotulo = document.createElement('span');
+  rotulo.textContent = 'rolou o d20:';
+  const val = document.createElement('span');
+  val.className = 'dadoval girando';
+  linha.append(rotulo, val);
+  item.append(nome, linha);
+  area.appendChild(item);
+  while (area.children.length > 100) area.firstElementChild.remove();
+  area.scrollTop = area.scrollHeight;
+
+  // Os numeros "giram" um instante antes de parar. E so enfeite: o resultado
+  // ja veio pronto do servidor.
+  const aleatorio = () => 1 + Math.floor(Math.random() * 20);
+  val.textContent = aleatorio();
+  const giro = setInterval(() => { val.textContent = aleatorio(); }, 60);
+  setTimeout(() => {
+    clearInterval(giro);
+    val.textContent = valor;
+    val.classList.remove('girando');
+    if (valor === 20 || valor === 1) {
+      item.classList.add(valor === 20 ? 'crit' : 'falha');
+      const selo = document.createElement('span');
+      selo.className = 'dadotag';
+      selo.textContent = valor === 20 ? 'CRÍTICO!' : 'FALHA CRÍTICA';
+      linha.appendChild(selo);
+    }
+    area.scrollTop = area.scrollHeight;
+    if (msg.peerId === myPeerId) mostrarMeuDado(valor);
+  }, DADO_GIRO_MS);
+}
+
+// No meu botao: mostra o numero que saiu e conta os 3s ate liberar de novo.
+function mostrarMeuDado(valor) {
+  clearTimeout(dadoSemResposta);
+  const b = $('btnDado');
+  b.querySelector('.num').textContent = valor;
+  b.classList.remove('rolando');
+  b.classList.add('mostrando', 'espera');
+  b.classList.toggle('crit', valor === 20);
+  b.classList.toggle('falha', valor === 1);
+  let resta = DADO_ESPERA_MS / 1000;
+  $('dadoLbl').textContent = resta + 's';
+  const contagem = setInterval(() => {
+    resta--;
+    if (resta > 0) $('dadoLbl').textContent = resta + 's';
+  }, 1000);
+  setTimeout(() => { clearInterval(contagem); liberarDado(); }, DADO_ESPERA_MS);
 }
 
 // ============================================================
@@ -2030,6 +2178,11 @@ function handleMsg(msg) {
 
   if (msg.type === 'chat') {
     adicionarMensagemChat(msg);
+    return;
+  }
+
+  if (msg.type === 'dado') {
+    receberDado(msg);
     return;
   }
 
