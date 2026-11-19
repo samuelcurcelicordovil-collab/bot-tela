@@ -398,9 +398,11 @@ function mandarFila(room, code) {
 const fujoes = new Map(); // codigo -> Map(nome normalizado -> { nome, por: peerId de quem ligou })
 
 // Dado d20: quem sorteia e o servidor, para ninguem forjar o numero pelo
-// console do navegador. Entre uma rolagem e outra da mesma pessoa: a animacao
-// (~0,7s) mais os 3s de espera depois do resultado, com uma folga pequena.
+// console do navegador. A espera vale para a SALA TODA: depois de uma rolagem
+// ninguem rola de novo ate passar a animacao (~0,7s) mais os 3s de espera
+// depois do resultado (com uma folga pequena).
 const DADO_INTERVALO_MS = 3500;
+const dadoUltimo = new Map(); // codigo da sala -> quando saiu a ultima rolagem
 function nomeChave(n) {
   return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 }
@@ -501,7 +503,6 @@ roomWss.on('error', (err) => registrar('ERRO NO WEBSOCKET', err && err.message))
 roomWss.on('connection', (ws) => {
   let myRoom = null;
   let myId = null;
-  let ultimoDado = 0;
   // Um socket que da erro sem tratamento derruba o processo inteiro.
   ws.on('error', (err) => registrar('ERRO DE CONEXAO', err && err.message));
   ws.isAlive = true;
@@ -528,9 +529,12 @@ roomWss.on('connection', (ws) => {
     if (msg.type === 'dado' && myRoom) {
       const room = rooms.get(myRoom);
       const eu = room && room.get(myId);
+      if (!eu) return;
       const agora = Date.now();
-      if (!eu || agora - ultimoDado < DADO_INTERVALO_MS) return;
-      ultimoDado = agora;
+      const resta = (dadoUltimo.get(myRoom) || 0) + DADO_INTERVALO_MS - agora;
+      // Cedo demais: avisa so quem tentou, para o botao dele esperar tambem.
+      if (resta > 0) { sendTo(ws, { type: 'dado-espera', resta }); return; }
+      dadoUltimo.set(myRoom, agora);
       broadcast(room, { type: 'dado', peerId: myId, name: eu.name || 'Anônimo', valor: crypto.randomInt(1, 21) });
       return;
     }
@@ -831,7 +835,7 @@ roomWss.on('connection', (ws) => {
     broadcast(room, { type: 'member-left', peerId: myId });
     const fj = fujoes.get(myRoom);
     if (fj) fj.forEach((a, chave) => { if (a.por === myId) { fj.delete(chave); avisarFujao(room, chave, false); } });
-    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); filas.delete(myRoom); fujoes.delete(myRoom); }
+    if (room.size === 0) { rooms.delete(myRoom); musicas.delete(myRoom); filas.delete(myRoom); fujoes.delete(myRoom); dadoUltimo.delete(myRoom); }
     console.log(`[sala ${myRoom}] alguem saiu (${room.size} restantes)`);
   });
 });

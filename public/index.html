@@ -592,7 +592,7 @@
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
             mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   }
-  #btnDado.espera::after { animation: dadoEspera 3s linear forwards; }
+  #btnDado.espera::after { animation: dadoEspera var(--dado-duracao, 3s) linear forwards; }
   @keyframes dadoEspera { from { --dado-resta: 1; } to { --dado-resta: 0; } }
 
   /* Resultado no chat: aparece para a sala toda. */
@@ -1354,37 +1354,85 @@ function avisoParticular(texto) {
 // DADO d20
 //
 // O clique so PEDE a rolagem: o numero e sorteado no servidor e chega igual
-// para a sala toda, no chat, com o nome de quem rolou. Depois de mostrar o
-// resultado, o dado de quem rolou espera 3s (o servidor tambem confere).
+// para a sala toda, no chat, com o nome de quem rolou. A espera e da SALA
+// TODA: quando alguem rola, o dado de todo mundo gira, mostra o numero e
+// espera 3s (o servidor tambem confere).
 // ============================================================
 const DADO_GIRO_MS = 700;
 const DADO_ESPERA_MS = 3000;
 const ICO_D20 = $('btnDado').querySelector('svg').outerHTML;
-let dadoOcupado = false;
-let dadoSemResposta = null;
+// 'livre' | 'pedindo' (cliquei e espero o servidor) | 'sala' (saiu uma rolagem)
+let dadoEstado = 'livre';
+let dadoTimers = [];
 
-$('btnDado').addEventListener('click', () => {
-  if (dadoOcupado || !ws || ws.readyState !== ws.OPEN) return;
-  dadoOcupado = true;
+function limparTimersDado() {
+  dadoTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  dadoTimers = [];
+}
+
+function girarBotaoDado() {
   const b = $('btnDado');
-  b.classList.remove('mostrando', 'crit', 'falha', 'rolando');
+  b.classList.remove('mostrando', 'espera', 'crit', 'falha', 'rolando');
   void b.offsetWidth; // recomeca a animacao de giro
   b.classList.add('rolando');
+  $('dadoLbl').textContent = 'Dado';
+}
+
+$('btnDado').addEventListener('click', () => {
+  if (dadoEstado !== 'livre' || !ws || ws.readyState !== ws.OPEN) return;
+  dadoEstado = 'pedindo';
+  girarBotaoDado();
   ws.send(JSON.stringify({ type: 'dado' }));
-  // Sem resposta (conexao caiu, ou o servidor achou cedo demais): libera.
-  clearTimeout(dadoSemResposta);
-  dadoSemResposta = setTimeout(liberarDado, 4000);
+  // Sem resposta nenhuma (conexao caiu): libera.
+  limparTimersDado();
+  dadoTimers.push(setTimeout(liberarDado, 4000));
 });
 
 function liberarDado() {
-  clearTimeout(dadoSemResposta);
-  dadoOcupado = false;
+  limparTimersDado();
+  dadoEstado = 'livre';
   $('btnDado').classList.remove('rolando', 'mostrando', 'espera', 'crit', 'falha');
   $('dadoLbl').textContent = 'Dado';
 }
 
+// Botao em espera por 'ms', com o anel esvaziando e a contagem embaixo.
+// Com 'valor', mostra no botao o numero que saiu.
+function esperarDado(ms, valor) {
+  limparTimersDado();
+  const b = $('btnDado');
+  b.classList.remove('rolando', 'espera', 'mostrando', 'crit', 'falha');
+  if (valor) {
+    b.querySelector('.num').textContent = valor;
+    b.classList.add('mostrando');
+    b.classList.toggle('crit', valor === 20);
+    b.classList.toggle('falha', valor === 1);
+  }
+  b.style.setProperty('--dado-duracao', ms + 'ms');
+  void b.offsetWidth; // recomeca o anel
+  b.classList.add('espera');
+  const fim = Date.now() + ms;
+  const contar = () => { $('dadoLbl').textContent = Math.max(1, Math.ceil((fim - Date.now()) / 1000)) + 's'; };
+  contar();
+  dadoTimers.push(setInterval(contar, 200));
+  dadoTimers.push(setTimeout(liberarDado, ms));
+}
+
+// Pedi cedo demais (alguem tinha acabado de rolar): espero o que falta.
+function dadoAindaEsperando(msg) {
+  if (dadoEstado !== 'pedindo') return; // a rolagem de outra pessoa ja travou o botao
+  esperarDado(Math.max(300, Math.min(4000, Number(msg.resta) || 0)));
+}
+
 function receberDado(msg) {
   const valor = Math.min(20, Math.max(1, Math.round(Number(msg.valor)) || 1));
+
+  // Qualquer rolagem trava o dado da sala toda: gira junto, mostra o numero
+  // que saiu e espera os 3s.
+  dadoEstado = 'sala';
+  limparTimersDado();
+  girarBotaoDado();
+  dadoTimers.push(setTimeout(() => esperarDado(DADO_ESPERA_MS, valor), DADO_GIRO_MS));
+
   const area = $('chatMessages');
   const vazio = area.querySelector('.chatempty');
   if (vazio) vazio.remove();
@@ -1424,26 +1472,7 @@ function receberDado(msg) {
       linha.appendChild(selo);
     }
     area.scrollTop = area.scrollHeight;
-    if (msg.peerId === myPeerId) mostrarMeuDado(valor);
   }, DADO_GIRO_MS);
-}
-
-// No meu botao: mostra o numero que saiu e conta os 3s ate liberar de novo.
-function mostrarMeuDado(valor) {
-  clearTimeout(dadoSemResposta);
-  const b = $('btnDado');
-  b.querySelector('.num').textContent = valor;
-  b.classList.remove('rolando');
-  b.classList.add('mostrando', 'espera');
-  b.classList.toggle('crit', valor === 20);
-  b.classList.toggle('falha', valor === 1);
-  let resta = DADO_ESPERA_MS / 1000;
-  $('dadoLbl').textContent = resta + 's';
-  const contagem = setInterval(() => {
-    resta--;
-    if (resta > 0) $('dadoLbl').textContent = resta + 's';
-  }, 1000);
-  setTimeout(() => { clearInterval(contagem); liberarDado(); }, DADO_ESPERA_MS);
 }
 
 // ============================================================
@@ -2183,6 +2212,11 @@ function handleMsg(msg) {
 
   if (msg.type === 'dado') {
     receberDado(msg);
+    return;
+  }
+
+  if (msg.type === 'dado-espera') {
+    dadoAindaEsperando(msg);
     return;
   }
 
