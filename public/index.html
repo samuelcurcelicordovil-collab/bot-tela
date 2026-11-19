@@ -125,7 +125,13 @@
     gap: 14px; align-items: start;
   }
 
-  #peopleView, #watchView, #gridView { grid-column: 2; grid-row: 1 / -1; min-width: 0; }
+  #salaView {
+    grid-column: 2; grid-row: 1 / -1; min-width: 0; height: 100%; min-height: 0;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #focoBar { display: none; }
+  #salaView.foco #focoBar { display: flex; }
+  #salaView:fullscreen { background: #000; padding: 12px; }
 
   /* ---------- GESTOS ---------- */
   /* Painel flutuante acima da barra de baixo. Flutua em vez de ocupar uma
@@ -276,92 +282,143 @@
 
   @media (max-width: 760px) {
     #stage { display: flex; flex-direction: column; }
-    #peopleView, #watchView, #gridView, #chatPanel, #musicPanel { width: 100%; }
+    #salaView, #chatPanel, #musicPanel { width: 100%; }
+    #salaView { height: auto; flex: none; }
     #musicPanel { order: 3; flex: none; }
     /* Gestos exigem ~18 MB e deteccao quadro a quadro: so no computador. */
     #btnGestos, #paneEfeitos .camnota { display: none; }
     #chatPanel { order: 4; height: 320px; min-height: 0; }
   }
 
-  /* ---------- TILES DE PESSOAS (estilo Discord) ---------- */
-  #peopleView { display: grid; gap: 14px; width: 100%; max-width: 1100px; margin: 0 auto;
-                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
-  .ptile {
-    position: relative; background: #232428; border-radius: 12px;
-    aspect-ratio: 16/10; overflow: hidden; border: 1px solid #2f3136;
-    display: flex; align-items: center; justify-content: center;
+  /* ---------- SALA: GRADE E DESTAQUE (estilo Discord) ---------- */
+  /* Cada pessoa e cada transmissao e um .quadro. Na grade eles dividem o
+     espaco (a largura vem do JS, em arrumarGrade); no destaque um deles vai
+     para o #palco e o resto vira a fileira de miniaturas embaixo. */
+  #palco { display: none; min-height: 0; }
+  #salaView.foco #palco { display: flex; flex: 1; }
+  #mosaico {
+    flex: 1; min-height: 0; display: flex; flex-wrap: wrap; gap: 12px;
+    justify-content: center; align-content: center; overflow-y: auto;
   }
-  .ptile.live { border-color: #3ba55c; }
-  .ptile video {
+  #salaView.foco #mosaico {
+    flex: 0 0 auto; height: 112px; flex-wrap: nowrap; align-content: stretch;
+    justify-content: safe center; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px;
+  }
+  #salaView.foco.sem-fileira #mosaico { display: none; }
+
+  .quadro {
+    position: relative; flex: none; aspect-ratio: 16/9; overflow: hidden;
+    background: #232428; border: 1px solid #2f3136; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    container-type: inline-size;
+  }
+  .quadro:hover { border-color: #5865f2; }
+  .quadro.tela { background: #111214; }
+  .quadro.escondido { display: none; }
+  #salaView.foco #mosaico .quadro { height: 100%; width: auto; border-radius: 9px; }
+  #palco .quadro { width: 100%; height: 100%; aspect-ratio: auto; background: #000; cursor: default; }
+  #palco .quadro:hover { border-color: #2f3136; }
+
+  .quadro video {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; display: none; background: #000;
   }
-  .ptile.hascam video { display: block; }
-  .ptile video.self { transform: scaleX(-1); } /* espelhado, como o Discord */
-  .ptile .avatar {
-    width: 72px; height: 72px; border-radius: 50%; background: #5865f2;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 1.6rem;
+  .quadro.comvideo video { display: block; }
+  .quadro.tela video, #palco .quadro video { object-fit: contain; }
+  .quadro video.self { transform: scaleX(-1); } /* minha camera espelhada, como o Discord */
+  .quadro .avatar {
+    display: none; width: clamp(34px, 24cqw, 96px); aspect-ratio: 1; border-radius: 50%;
+    background: #5865f2; align-items: center; justify-content: center;
+    font-weight: 700; font-size: clamp(.8rem, 8cqw, 2rem);
   }
-  .ptile.hascam .avatar { display: none; }
-  .namechip {
-    position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.65);
-    padding: 3px 9px; border-radius: 5px; font-size: .8rem; max-width: 60%;
+  .quadro.pessoa:not(.comvideo) .avatar { display: flex; }
+
+  /* Transmissao que ainda nao abri: nao baixa nada ate clicar. */
+  .quadro .capa {
+    display: none; position: absolute; inset: 0; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; color: #9aa0a6;
+    background: radial-gradient(circle at 50% 40%, #2a2c33, #141518);
+  }
+  .quadro.capa-on .capa { display: flex; }
+  .quadro .capa svg { width: clamp(18px, 12cqw, 42px); height: auto; }
+  .quadro .capa .assistir { background: #3ba55c; padding: 7px 14px; font-size: .82rem; }
+  .quadro .capa .assistir:hover { background: #2d8049; }
+  #salaView.foco #mosaico .capa .assistir { padding: 3px 8px; font-size: .7rem; }
+
+  .quadro .nome {
+    position: absolute; left: 8px; bottom: 8px; z-index: 2; max-width: calc(100% - 16px);
+    background: rgba(0,0,0,.65); padding: 3px 9px; border-radius: 5px; font-size: .8rem;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .livechip {
-    position: absolute; left: 8px; top: 8px; background: #da373c;
-    padding: 2px 8px; border-radius: 4px; font-size: .68rem; font-weight: 700;
-    display: none;
+  #salaView.foco #mosaico .nome { left: 5px; bottom: 5px; padding: 1px 6px; font-size: .7rem; }
+  .quadro .selos { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; gap: 6px; }
+  .quadro .livechip {
+    display: none; background: #da373c; padding: 2px 8px; border-radius: 4px;
+    font-size: .68rem; font-weight: 700;
   }
-  .ptile.live .livechip { display: block; }
-  .viewchip {
-    position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.65);
-    padding: 2px 8px; border-radius: 4px; font-size: .72rem; color: #9aa0a6;
-    display: none;
+  .quadro.tela .livechip { display: block; }
+  .quadro .viewchip {
+    display: none; background: rgba(0,0,0,.65); padding: 2px 8px; border-radius: 4px;
+    font-size: .72rem; color: #c9cdd3;
   }
-  .ptile .pipicon {
-    position: absolute; right: 8px; top: 8px; width: 24px; height: 24px;
-    background: rgba(0,0,0,.65); border-radius: 5px; font-size: .8rem;
-    align-items: center; justify-content: center; cursor: pointer; display: none;
+  .quadro.tela.eu .viewchip { display: block; }
+  #salaView.foco #mosaico .selos { left: 5px; top: 5px; }
+  #salaView.foco #mosaico .livechip { padding: 1px 5px; font-size: .6rem; }
+  #salaView.foco #mosaico .viewchip { display: none; }
+
+  /* Pop-up e "parar de assistir": aparecem ao passar o mouse. */
+  .quadro .acoes {
+    position: absolute; right: 8px; top: 8px; z-index: 4; display: flex; gap: 5px;
+    opacity: 0; transition: opacity .15s;
   }
-  .ptile.hascam .pipicon { display: flex; }
-  .ptile.hascam .viewchip { top: 36px; } /* nao empilhar em cima do pipicon */
-  .ptile .pipicon:hover { background: rgba(0,0,0,.9); }
-  .watchbtn {
-    position: absolute; right: 8px; bottom: 8px; padding: 6px 12px;
-    font-size: .8rem; display: none; background: #3ba55c;
+  .quadro:hover .acoes { opacity: 1; }
+  .quadro .qbtn {
+    display: none; width: 26px; height: 26px; padding: 0; border-radius: 6px;
+    background: rgba(0,0,0,.7); align-items: center; justify-content: center;
   }
-  /* Visibilidade pelo CSS, nao pelo JS: definir style.display = '' apaga o
-     estilo inline e faz cair no display:none daqui — o botao nunca aparecia. */
-  .ptile.live .watchbtn { display: block; }
-  .watchbtn:hover { background: #2d8049; }
-  /* Botao "trocar tela" — so aparece pra quem esta transmitindo, no proprio
-     quadro e na tela de "assistindo a minha transmissao". Estilo discreto,
-     igual aos controles que ficam por cima do video. Visibilidade pelo JS. */
+  .quadro .qbtn:hover { background: rgba(0,0,0,.92); }
+  .quadro .qbtn svg { width: 13px; height: 13px; }
+  .quadro.comvideo .qbtn.pip { display: inline-flex; }
+  .quadro.assistindo .qbtn.parar { display: inline-flex; }
+  #salaView.foco #mosaico .acoes { right: 4px; top: 4px; }
+
+  /* "Trocar tela": so no quadro da MINHA transmissao, e nao nas miniaturas. */
   .switchbtn {
-    position: absolute; right: 8px; bottom: 44px; display: none;
+    position: absolute; right: 8px; bottom: 8px; z-index: 3; display: none;
     align-items: center; gap: 6px; padding: 6px 10px;
     font-size: .8rem; font-weight: 500; color: #e3e5e8;
     background: rgba(0, 0, 0, .55); border: 1px solid #3f4147; border-radius: 6px;
   }
   .switchbtn svg { width: 15px; height: 15px; }
   .switchbtn:hover { background: rgba(0, 0, 0, .8); border-color: #5865f2; }
-  /* Na tela de "assistindo a minha propria transmissao": canto de cima da esquerda. */
-  #btnTrocarTela { top: 12px; left: 12px; right: auto; bottom: auto; z-index: 4; }
-  .ptile.live { cursor: pointer; }
-  .ptile.live:hover { border-color: #57d98a; }
-  .ptile.live:hover .watchbtn { background: #2d8049; }
+  .quadro.tela.eu .switchbtn { display: inline-flex; }
+  #salaView.foco #mosaico .switchbtn { display: none; }
+  .quadro .framemsg { z-index: 1; }
+  .quadro .camoverlay { z-index: 3; }
+  #salaView.foco #mosaico .framemsg { padding: 6px; gap: 4px; }
+  #salaView.foco #mosaico .framemsg .d,
+  #salaView.foco #mosaico .framemsg .big { display: none; }
+  #salaView.foco #mosaico .framemsg .t { font-size: .72rem; }
+  /* Celular: a sala nao tem altura fixa, entao o destaque tem 16:9 proprio.
+     (Fica depois das regras acima para valer por cima delas.) */
+  @media (max-width: 760px) {
+    #salaView.foco #palco { flex: none; aspect-ratio: 16/9; }
+    #salaView:fullscreen #palco { flex: 1; aspect-ratio: auto; }
+    #salaView.foco #mosaico { height: 88px; }
+    /* Barra do destaque enxuta: no celular o volume e nos botoes do aparelho. */
+    #btnShowCam span, #volRange { display: none; }
+    #btnShowCam { padding: 8px; }
+  }
 
   /* ---------- BRILHO NA BORDA (segue o mouse, tipo Aceternity) ---------- */
   /* --glow-opacity/--glow-angle sao escritos via JS (efeitoGlow mais abaixo). */
-  .ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal {
+  .quadro, #chatPanel, #musicPanel, #controls, .ctl button, .modal {
     --glow-opacity: 0;
     --glow-angle: 0deg;
     box-shadow: 0 0 24px 2px rgba(88, 101, 242, calc(var(--glow-opacity, 0) * .5));
     transition: box-shadow .2s ease;
   }
-  .ptile::before, .camtile::before, .gtile::before, #chatPanel::before,
+  .quadro::before, #chatPanel::before,
   #musicPanel::before, #controls::before, .ctl button::before, .modal::before {
     content: '';
     position: absolute;
@@ -383,14 +440,12 @@
   }
 
   /* ---------- ASSISTINDO ---------- */
-  #watchView { display: none; flex-direction: column; height: 100%; min-height: 0; gap: 10px; }
+  #btnShowCam.on { background: #3c45a5; }
+  #btnShowCam.on:hover { background: #4752c4; }
   .watchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .watchbar .who { font-weight: 600; }
   .live-badge { background: #da373c; border-radius: 4px; padding: 2px 7px;
                 font-size: .68rem; font-weight: 700; margin-right: 6px; }
-  .switchrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .switchrow .lbl { font-size: .82rem; color: #9aa0a6; }
-  .switchrow button { padding: 6px 12px; font-size: .82rem; }
   .volctl { display: flex; align-items: center; gap: 7px; }
   .volctl input[type=range] {
     width: 92px; accent-color: #5865f2; cursor: pointer; height: 4px;
@@ -410,6 +465,12 @@
   .stats svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 5px; }
   .watchbar button { display: inline-flex; align-items: center; gap: 6px; }
   .watchbar button svg { width: 16px; height: 16px; flex: none; }
+  /* Tela mais estreita: miniaturas e tela cheia viram so icone (o nome fica
+     no balaozinho ao passar o mouse), para a barra caber numa linha. */
+  @media (max-width: 1400px) {
+    #btnFileira span, #btnFs span { display: none; }
+    #btnFileira, #btnFs { padding: 8px; }
+  }
   #btnMute { padding: 8px; }
   #btnMute.semsom { color: #f0b232; }
   #btnMute span { font-size: .82rem; }
@@ -435,13 +496,9 @@
   }
   .sinal.aberto .det { display: inline; }
   .pipicon svg, .fsicon svg, .camctl button svg { width: 13px; height: 13px; display: block; }
-  .gtile .bar button svg { width: 14px; height: 14px; display: block; }
   .viewchip svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; }
   .framemsg .big svg { width: 38px; height: 38px; color: #9aa0a6; }
   #btnMusicUnlock svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 6px; }
-  .videoframe { flex: 1; min-height: 0; background: #000; border-radius: 12px;
-                overflow: hidden; position: relative; border: 1px solid #2f3136; }
-  .videoframe video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .framemsg {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: center; gap: 10px; text-align: center;
@@ -452,17 +509,6 @@
   .framemsg .t { font-weight: 600; }
   .framemsg .d { font-size: .85rem; color: #9aa0a6; max-width: 42ch; line-height: 1.5; }
 
-  /* ---------- GRADE DE STREAMS ---------- */
-  #gridView { display: none; gap: 14px; }
-  .gtile { position: relative; background: #000; border-radius: 10px; overflow: hidden;
-           aspect-ratio: 16/9; border: 1px solid #2f3136; }
-  .gtile video { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .gtile .bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex;
-                align-items: center; gap: 8px; padding: 7px 10px; font-size: .82rem;
-                background: linear-gradient(transparent, rgba(0,0,0,.85)); }
-  .gtile .bar .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gtile .bar button { padding: 4px 9px; font-size: .75rem; background: rgba(255,255,255,.14); }
-  .gtile .bar button:hover { background: rgba(255,255,255,.28); }
   .empty { color: #6a6f76; font-size: .9rem; }
   :fullscreen { background: #000; }
   :fullscreen > video { width: 100%; height: 100%; object-fit: contain; }
@@ -485,10 +531,10 @@
   .camoverlay video::-webkit-media-controls-panel,
   .camoverlay video::-webkit-media-controls-start-playback-button,
   .camoverlay video::-webkit-media-controls-play-button,
-  .camtile video::-webkit-media-controls,
-  .camtile video::-webkit-media-controls-panel,
-  .camtile video::-webkit-media-controls-start-playback-button,
-  .camtile video::-webkit-media-controls-play-button {
+  .quadro video::-webkit-media-controls,
+  .quadro video::-webkit-media-controls-panel,
+  .quadro video::-webkit-media-controls-start-playback-button,
+  .quadro video::-webkit-media-controls-play-button {
     display: none !important;
     -webkit-appearance: none;
   }
@@ -502,36 +548,6 @@
              font-size: .62rem; padding: 2px; background: rgba(0,0,0,.6);
              opacity: 0; transition: opacity .15s; pointer-events: none; }
   .camoverlay:hover .camhint { opacity: 1; }
-
-  /* ---------- FAIXA DE CÂMERAS (embaixo da transmissão) ---------- */
-  #camStrip {
-    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
-    flex: 0 0 auto; padding-top: 2px;
-  }
-  #camStrip:empty { display: none; }
-  .camtile {
-    width: 168px; aspect-ratio: 4/3; background: #000; border-radius: 8px;
-    overflow: hidden; position: relative; border: 1px solid #2f3136;
-    cursor: pointer; flex: none;
-  }
-  .camtile:hover { border-color: #5865f2; }
-  .camtile video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .camtile video.self { transform: scaleX(-1); }
-  .camtile .nm {
-    position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px;
-    background: rgba(0,0,0,.7); font-size: .72rem; text-align: center;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .camtile .fsicon, .camtile .pipicon {
-    position: absolute; top: 4px; font-size: .72rem;
-    background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 5px;
-    opacity: 0; transition: opacity .15s; cursor: pointer;
-  }
-  .camtile .fsicon { right: 5px; }
-  .camtile .pipicon { left: 5px; }
-  .camtile:hover .fsicon, .camtile:hover .pipicon { opacity: 1; }
-  .camtile .pipicon:hover { background: rgba(0,0,0,.85); }
-  .camtile:fullscreen video { object-fit: contain; }
 
   /* ---------- BARRA DE CONTROLES (estilo Discord) ---------- */
   #controls {
@@ -656,7 +672,35 @@
   <div id="diagPanel"></div>
 
   <div id="stage">
-    <div id="peopleView"></div>
+    <div id="salaView">
+      <div class="watchbar" id="focoBar">
+        <button class="ghost" id="btnBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span id="btnBackTxt">Voltar</span></button>
+        <span class="who" id="watchWho"></span>
+        <div class="spacer"></div>
+        <span id="statsBadge" class="sinal" role="button" tabindex="0" style="display:none"><span class="barras"><i></i><i></i><i></i></span><span class="rot"></span><span class="det"></span></span>
+        <button class="ghost" id="btnShowCam" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg><span>Câmera por cima</span></button>
+        <span class="volctl" id="volCtl" title="Volume (teclas ↑ e ↓)">
+          <button class="ghost" id="btnMute"></button>
+          <input type="range" id="volRange" min="0" max="100" step="5">
+        </span>
+        <button class="ghost" id="btnFileira"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="3" rx="2"/><rect width="5" height="4" x="3" y="17" rx="1"/><rect width="5" height="4" x="9.5" y="17" rx="1"/><rect width="5" height="4" x="16" y="17" rx="1"/></svg><span>Esconder miniaturas</span></button>
+        <button class="ghost" id="btnFs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Tela cheia</span></button>
+      </div>
+      <div id="palco"></div>
+      <div id="mosaico"></div>
+      <!-- Camera por cima da transmissao em destaque (opcional). Fica guardada
+           aqui, escondida, e vai para dentro do quadro em destaque quando ligada. -->
+      <div class="camoverlay" id="watchCam">
+        <video autoplay playsinline muted></video>
+        <div class="camctl">
+          <button data-act="full" title="Tela cheia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+          <button data-act="pip" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></button>
+          <button data-act="size" title="Tamanho">M</button>
+          <button data-act="hide" title="Tirar a câmera de cima"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div>
+        <div class="camhint">arraste para mover · duplo clique = tela cheia</div>
+      </div>
+    </div>
 
     <aside id="musicPanel">
       <div class="chathead">Música da sala<small>Todo mundo ouve junto, no mesmo segundo</small></div>
@@ -707,42 +751,6 @@
       </form>
     </aside>
 
-    <div id="watchView">
-      <div class="watchbar">
-        <button class="ghost" id="btnBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span id="btnBackTxt">Voltar</span></button>
-        <span class="who" id="watchWho"></span>
-        <div class="spacer"></div>
-        <span id="statsBadge" class="sinal" role="button" tabindex="0" style="display:none"><span class="barras"><i></i><i></i><i></i></span><span class="rot"></span><span class="det"></span></span>
-        <button class="ghost" id="btnShowCam" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg><span>Mostrar câmera</span></button>
-        <span class="volctl" id="volCtl" title="Volume (teclas ↑ e ↓)">
-          <button class="ghost" id="btnMute"></button>
-          <input type="range" id="volRange" min="0" max="100" step="5">
-        </span>
-        <button class="ghost" id="btnFs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Tela cheia</span></button>
-      </div>
-      <div class="switchrow" id="switchRow"></div>
-      <div class="videoframe" id="watchFrame">
-        <video id="watchVideo" autoplay playsinline></video>
-        <button id="btnTrocarTela" class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
-          <span>Trocar tela</span>
-        </button>
-        <div id="watchMsg" class="framemsg"></div>
-        <div class="camoverlay" id="watchCam">
-          <video autoplay playsinline muted></video>
-          <div class="camctl">
-            <button data-act="full" title="Tela cheia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
-            <button data-act="pip" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></button>
-            <button data-act="size" title="Tamanho">M</button>
-            <button data-act="hide" title="Esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-          </div>
-          <div class="camhint">arraste para mover · duplo clique = tela cheia</div>
-        </div>
-      </div>
-      <div id="camStrip"></div>
-    </div>
-
-    <div id="gridView"></div>
   </div>
 
   <div id="camPanel">
@@ -779,12 +787,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/><path d="M19 3v4M17 5h4"/></svg>
       </button>
       <span class="lbl">Efeitos</span>
-    </div>
-    <div class="ctl">
-      <button id="btnGrid" title="Ver todas as transmissões" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
-      </button>
-      <span class="lbl">Ver todas</span>
     </div>
   </div>
 </div>
@@ -1060,12 +1062,17 @@ const incomingCalls = new Map();// peerId -> chamada recebida (para ler estatist
 let subscribed = new Set();
 const connState = new Map();
 
-let mode = 'people';            // 'people' | 'watch' | 'grid'
-let watchTarget = null;
+let mode = 'grade';             // 'grade' | 'foco'
+let focoKey = null;             // quadro em destaque: 'p:<id>' (camera) ou 't:<id>' (transmissao)
 let muted = false;
+const quadros = new Map();      // chave -> quadro (criado uma vez; depois so muda de lugar)
+const assistindo = new Set();   // transmissoes que eu abri: continuam rodando na grade e na fileira
+const qualidadeEnviada = new Map(); // transmissao -> qualidade que ja pedi ('cheia' | 'mini')
+const qualidadePedida = new Map();  // quem me assiste -> qualidade que pediu da MINHA transmissao
+let fileiraEscondida = localStorage.getItem('botTelaFileira') === 'escondida';
 
 const camPref = Object.assign(
-  { x: 3, y: 4, size: 'm', hidden: false },
+  { x: 3, y: 4, size: 'm', flutuante: false },
   JSON.parse(localStorage.getItem('botTelaCam') || '{}')
 );
 const CAM_SIZES = { p: 14, m: 22, g: 32 };
@@ -2064,6 +2071,8 @@ function handleMsg(msg) {
     // Reconexao: descarta midia de quem ja saiu e reassina o que eu olhava.
     [...streams.keys()].forEach(id => { if (!members.has(id)) streams.delete(id); });
     [...camStreams.keys()].forEach(id => { if (!members.has(id)) camStreams.delete(id); });
+    [...assistindo].forEach(id => { if (!members.has(id)) assistindo.delete(id); });
+    qualidadeEnviada.clear();
     subscribed = new Set();
     syncSubs(desiredSubs());
     // Minha camera vai pra todo mundo que esta na sala.
@@ -2092,7 +2101,9 @@ function handleMsg(msg) {
     streams.delete(msg.peerId);
     camStreams.delete(msg.peerId);
     subscribed.delete(msg.peerId);
-    if (watchTarget === msg.peerId) backToPeople();
+    assistindo.delete(msg.peerId);
+    qualidadeEnviada.delete(msg.peerId);
+    qualidadePedida.delete(msg.peerId);
     render();
   }
 
@@ -2100,11 +2111,11 @@ function handleMsg(msg) {
     const m = members.get(msg.peerId);
     if (m) m.broadcasting = msg.on;
     if (!msg.on) {
+      // Parou de transmitir: sai do que eu assisto. Se voltar, e so clicar de novo.
       streams.delete(msg.peerId);
       subscribed.delete(msg.peerId);
-      if (watchTarget === msg.peerId) backToPeople();
-    } else if (mode === 'grid') {
-      syncSubs(desiredSubs());
+      assistindo.delete(msg.peerId);
+      qualidadeEnviada.delete(msg.peerId);
     }
     render();
   }
@@ -2116,6 +2127,14 @@ function handleMsg(msg) {
     render();
   }
 
+  // Quem me assiste pediu outra qualidade da minha transmissao (miniatura ou cheia).
+  if (msg.type === 'quality-request') {
+    qualidadePedida.set(msg.from, msg.nivel === 'mini' ? 'mini' : 'cheia');
+    const c = outgoing.get(msg.from);
+    if (c) priorizarFluidez(c);
+    return;
+  }
+
   if (msg.type === 'watch-request') {
     watchers.add(msg.from);
     if (myStream) callPeer(msg.from);
@@ -2123,6 +2142,7 @@ function handleMsg(msg) {
   }
   if (msg.type === 'unwatch-request') {
     watchers.delete(msg.from);
+    qualidadePedida.delete(msg.from);
     const c = outgoing.get(msg.from);
     if (c) { c.close(); outgoing.delete(msg.from); }
     render();
@@ -2133,13 +2153,8 @@ function handleMsg(msg) {
 // Assinaturas de tela (so recebo o que estou olhando)
 // ============================================================
 function desiredSubs() {
-  if (mode === 'watch' && watchTarget && watchTarget !== myPeerId) return new Set([watchTarget]);
-  if (mode === 'grid') {
-    return new Set([...members.entries()]
-      .filter(([id, m]) => m.broadcasting && id !== myPeerId)
-      .map(([id]) => id));
-  }
-  return new Set();
+  // So recebo as transmissoes que eu abri.
+  return new Set([...assistindo].filter(id => id !== myPeerId && (members.get(id) || {}).broadcasting));
 }
 
 function syncSubs(desired) {
@@ -2148,10 +2163,14 @@ function syncSubs(desired) {
     if (!desired.has(id)) {
       ws.send(JSON.stringify({ type: 'unwatch', target: id }));
       streams.delete(id);
+      qualidadeEnviada.delete(id);
     }
   });
   desired.forEach(id => {
-    if (!subscribed.has(id)) ws.send(JSON.stringify({ type: 'watch', target: id }));
+    if (!subscribed.has(id)) {
+      ws.send(JSON.stringify({ type: 'watch', target: id }));
+      qualidadeEnviada.delete(id);   // a qualidade vai de novo junto com a nova assinatura
+    }
   });
   subscribed = desired;
 }
@@ -2182,57 +2201,51 @@ function watchConnection(call) {
 // ============================================================
 const viewStack = [];
 
-function applyView(newMode, target) {
+function applyView(newMode, chave) {
   mode = newMode;
-  watchTarget = target || null;
+  focoKey = newMode === 'foco' ? chave : null;
+  // Por uma transmissao em destaque e assistir a ela.
+  const tf = focoTela();
+  if (tf && tf !== myPeerId) assistindo.add(tf);
   syncSubs(desiredSubs());
   render();
 }
 
-function navigateTo(newMode, target) {
-  if (newMode === mode && (target || null) === watchTarget) return; // ja estou aqui
-  viewStack.push({ mode, watchTarget });
+function navigateTo(newMode, chave) {
+  if (newMode === mode && (chave || null) === focoKey) return; // ja estou aqui
+  viewStack.push({ mode, focoKey });
   if (viewStack.length > 30) viewStack.shift();
   history.pushState({ depth: viewStack.length }, '');
-  applyView(newMode, target);
+  applyView(newMode, chave);
 }
 
 function goBackInternal() {
   while (viewStack.length) {
     const prev = viewStack.pop();
     // Pula telas que nao existem mais (alguem parou de transmitir/saiu).
-    if (prev.mode === 'watch') {
-      const m = members.get(prev.watchTarget);
-      if (!m || !m.broadcasting) continue;
-    }
-    applyView(prev.mode, prev.watchTarget);
+    if (prev.mode === 'foco' && !quadroExiste(prev.focoKey)) continue;
+    applyView(prev.mode, prev.focoKey);
     return;
   }
-  applyView('people', null);
+  applyView('grade', null);
 }
 
 // O botao Voltar e o botao do navegador seguem o mesmo caminho.
 window.addEventListener('popstate', goBackInternal);
 
-function watchPerson(peerId) { navigateTo('watch', peerId); }
-
 function backToPeople() {
   viewStack.length = 0;
-  applyView('people', null);
+  applyView('grade', null);
 }
 
 function voltar() {
   if (viewStack.length) history.back();   // dispara popstate -> goBackInternal
-  else applyView('people', null);
+  else applyView('grade', null);
 }
 
 $('btnBack').addEventListener('click', voltar);
-$('btnGrid').addEventListener('click', () => {
-  if (mode === 'grid') return voltar();
-  navigateTo('grid', null);
-});
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && mode !== 'people' && !document.fullscreenElement) voltar();
+  if (e.key === 'Escape' && mode === 'foco' && !document.fullscreenElement) voltar();
 });
 
 // ============================================================
@@ -2447,25 +2460,46 @@ function callPeer(peerId) {
 // Diz ao codificador: quando faltar banda, prefira BAIXAR A RESOLUCAO em vez
 // de derrubar os quadros por segundo. Sem isso o Chrome segura 720p e entrega
 // 4 fps, que e injogavel. Melhor 480p fluido que 720p travado.
-async function priorizarFluidez(call, tentativa = 0) {
+function priorizarFluidez(call) {
+  // Uma mudanca por vez em cada conexao: duas setParameters ao mesmo tempo
+  // disputam a mesma versao dos parametros e a segunda falha.
+  call.ajusteFila = (call.ajusteFila || Promise.resolve())
+    .then(() => aplicarQualidade(call))
+    .catch(() => {});
+}
+
+async function aplicarQualidade(call) {
   const pc = call.peerConnection;
   if (!pc) return;
-  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-  if (!sender) {
-    if (tentativa < 10) setTimeout(() => priorizarFluidez(call, tentativa + 1), 300);
-    return;
+  let sender = null;
+  for (let i = 0; i < 10 && !sender; i++) {
+    sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (!sender) await new Promise(r => setTimeout(r, 300));
   }
+  if (!sender) return;
+  // Miniatura: quem assiste esta vendo a minha transmissao pequena (na fileira
+  // de baixo ou numa grade cheia). Para essa pessoa vai uns 360p, mais leve.
+  const mini = qualidadePedida.get(call.peer) === 'mini';
   try {
     const p = sender.getParameters();
     if (!p.encodings || !p.encodings.length) p.encodings = [{}];
     // Teto fixo e alto: fica nitido em 720p o tempo todo, parado ou nao.
-    p.encodings[0].maxBitrate = BITRATE_720P;
+    p.encodings[0].maxBitrate = mini ? BITRATE_MINI : BITRATE_720P;
+    p.encodings[0].scaleResolutionDownBy = mini ? escalaMini(sender.track) : 1;
+    p.encodings[0].maxFramerate = mini ? 20 : 30;
     p.degradationPreference = 'maintain-framerate';
     await sender.setParameters(p);
   } catch (e) {
-    console.warn('nao consegui priorizar fluidez:', e.message);
+    console.warn('nao consegui ajustar a qualidade:', e.message);
   }
 }
+
+function escalaMini(track) {
+  const altura = (track && track.getSettings && track.getSettings().height) || 720;
+  return Math.max(1, altura / 360);
+}
+
+const BITRATE_MINI = 500_000;   // ~0,5 Mbps: miniatura em 360p
 
 const BITRATE_720P = 2_500_000; // ~2.5 Mbps: nitido em 720p, sempre no teto
 
@@ -2567,7 +2601,6 @@ function stopShare() {
   const me = members.get(myPeerId);
   if (me) me.broadcasting = false;
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'broadcast-state', on: false }));
-  if (watchTarget === myPeerId) backToPeople();
   render();
 }
 
@@ -2961,7 +2994,7 @@ function wireCamOverlay(overlay) {
   });
   overlay.querySelector('[data-act=hide]').addEventListener('click', e => {
     e.stopPropagation();
-    camPref.hidden = true;
+    camPref.flutuante = false;
     saveCamPref();
     render();
   });
@@ -3012,11 +3045,6 @@ function wireCamOverlay(overlay) {
   overlay.addEventListener('pointercancel', endDrag);
 }
 
-// ---- faixa de cameras embaixo da transmissao ----
-// Mostra todo mundo que esta com a camera ligada, menos quem esta sendo
-// assistido (a camera dessa pessoa e a flutuante, por cima do video).
-const camtiles = new Map();
-
 function telaCheia(el) {
   if (document.fullscreenElement) document.exitFullscreen();
   else el.requestFullscreen().catch(e => console.warn('tela cheia:', e.message));
@@ -3042,47 +3070,6 @@ async function abrirCameraPip(video) {
   }
 }
 
-function buildCamTile(peerId) {
-  const tile = document.createElement('div');
-  tile.className = 'camtile';
-  tile.innerHTML = `<video autoplay playsinline muted></video>
-                    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></div>
-                    <div class="fsicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></div>
-                    <div class="nm"></div>`;
-  tile.title = 'Clique para ver em tela cheia';
-  tile.addEventListener('click', () => telaCheia(tile));
-  tile.querySelector('.pipicon').addEventListener('click', e => {
-    e.stopPropagation();
-    abrirCameraPip(tile.querySelector('video'));
-  });
-  return tile;
-}
-
-function renderCamStrip() {
-  const strip = $('camStrip');
-  const comCamera = [...members.entries()].filter(([id, m]) => {
-    if (id === watchTarget) return false;              // essa e a flutuante
-    const s = id === myPeerId ? myCam : camStreams.get(id);
-    return !!s && m.camOn;
-  });
-  const ids = new Set(comCamera.map(([id]) => id));
-
-  camtiles.forEach((el, id) => {
-    if (!ids.has(id)) { el.remove(); camtiles.delete(id); }
-  });
-
-  comCamera.forEach(([id, m]) => {
-    let tile = camtiles.get(id);
-    if (!tile) { tile = buildCamTile(id); camtiles.set(id, tile); }
-    const v = tile.querySelector('video');
-    const s = id === myPeerId ? myCam : camStreams.get(id);
-    if (v.srcObject !== s) v.srcObject = s;
-    v.classList.toggle('self', id === myPeerId);
-    tile.querySelector('.nm').textContent = m.name + (id === myPeerId ? ' (você)' : '');
-    strip.appendChild(tile);   // ja existe: so reordena, nao reinicia o video
-  });
-}
-
 // O Safari so esconde o botao de play se o video estiver realmente rodando.
 // Camera e stream local e muda, entao tocar e sempre seguro — mas o iOS as
 // vezes nao inicia sozinho quando o srcObject troca, e ai aparece o controle.
@@ -3092,11 +3079,9 @@ function garantirTocando(v) {
 }
 
 function mountCam(overlay, peerId) {
-  const m = members.get(peerId);
-  const stream = peerId === myPeerId ? myCam : camStreams.get(peerId);
-  const has = !!stream && !!(m && m.camOn);
-  overlay.classList.toggle('on', has && !camPref.hidden);
-  if (!has) return false;
+  const stream = cameraDe(peerId);
+  overlay.classList.toggle('on', !!stream && camPref.flutuante);
+  if (!stream) return false;
   const v = overlay.querySelector('video');
   if (v.srcObject !== stream) { v.srcObject = stream; garantirTocando(v); }
   wireCamOverlay(overlay);
@@ -3104,13 +3089,13 @@ function mountCam(overlay, peerId) {
   return true;
 }
 
+// Liga/desliga a camera por cima da transmissao em destaque. Vale para todas
+// as transmissoes e fica guardado no navegador.
 $('btnShowCam').addEventListener('click', () => {
-  camPref.hidden = false;
+  camPref.flutuante = !camPref.flutuante;
   saveCamPref();
   render();
 });
-
-$('btnTrocarTela').addEventListener('click', trocarTela);
 
 // ============================================================
 // Estatísticas da transmissão que estou vendo
@@ -3121,13 +3106,15 @@ let statsTimer = null;
 let ultimaMedida = null;
 
 async function lerEstatisticas() {
-  const badge = $('statsBadge');
-  if (mode !== 'watch' || !watchTarget || watchTarget === myPeerId) {
+  const alvo = focoTela();
+  if (!alvo || alvo === myPeerId) {
     pintarQualidade(null);
     ultimaMedida = null;
     return;
   }
-  const call = incomingCalls.get(watchTarget);
+  // Trocou de transmissao: a medida anterior era de outra conexao.
+  if (ultimaMedida && ultimaMedida.alvo !== alvo) ultimaMedida = null;
+  const call = incomingCalls.get(alvo);
   const pc = call && call.peerConnection;
   if (!pc) { pintarQualidade(null); return; }
 
@@ -3160,7 +3147,7 @@ async function lerEstatisticas() {
     const dChegaram = Math.max(0, chegaram - ultimaMedida.chegaram);
     if (dPerdidos + dChegaram > 0) perdaAgora = (dPerdidos / (dPerdidos + dChegaram)) * 100;
   }
-  ultimaMedida = { bytes: video.bytesReceived, ts: video.timestamp, perdidos, chegaram };
+  ultimaMedida = { alvo, bytes: video.bytesReceived, ts: video.timestamp, perdidos, chegaram };
 
   const retransmitido = local === 'relay' || remoto === 'relay';
   const fps = Math.round(video.framesPerSecond || 0);
@@ -3269,17 +3256,14 @@ function aplicarVolume() {
   volume = Math.max(0, Math.min(100, Math.round(volume)));
   localStorage.setItem('botTelaVolume', String(volume));
 
-  const v = $('watchVideo');
-  v.volume = volume / 100;
-  // Volume zero equivale a mudo, entao os dois controles andam juntos.
-  // A propria transmissao fica SEMPRE muda: sem isto, mexer no volume (as
-  // setas, por exemplo) enquanto voce se assiste tirava o mudo e voce passava
-  // a escutar o proprio microfone.
-  v.muted = muted || volume === 0 || watchTarget === myPeerId;
-
-  // A grade tambem obedece (o meu proprio quadro continua sempre mudo).
-  document.querySelectorAll('#gridView .gtile video').forEach(el => {
-    el.volume = volume / 100;
+  // Cada transmissao que assisto obedece. A minha propria fica SEMPRE muda:
+  // sem isto, mexer no volume enquanto voce se assiste fazia voce escutar o
+  // proprio microfone.
+  quadros.forEach((q, k) => {
+    if (k[0] !== 't') return;
+    const v = q.querySelector('video');
+    v.volume = volume / 100;
+    v.muted = !deveOuvir(k.slice(2));
   });
 
   const range = $('volRange'), val = $('volVal');
@@ -3324,17 +3308,25 @@ $('btnMute').addEventListener('click', () => {
 
 // Setas para cima e para baixo ajustam o volume enquanto assiste.
 document.addEventListener('keydown', e => {
-  if (mode !== 'watch') return;
+  const tf = focoTela();
+  if (!tf || tf === myPeerId) return;
   if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
   if (e.key === 'ArrowUp') { mudarVolume(10); e.preventDefault(); }
   if (e.key === 'ArrowDown') { mudarVolume(-10); e.preventDefault(); }
 });
 
 aplicarVolume();
-$('btnFs').addEventListener('click', () => {
-  const frame = $('watchFrame');
+// Tela cheia leva o destaque junto com a fileira de miniaturas, como no Discord.
+function alternarTelaCheia() {
   if (document.fullscreenElement) document.exitFullscreen();
-  else frame.requestFullscreen().catch(e => console.warn('tela cheia:', e.message));
+  else $('salaView').requestFullscreen().catch(e => console.warn('tela cheia:', e.message));
+}
+$('btnFs').addEventListener('click', alternarTelaCheia);
+
+$('btnFileira').addEventListener('click', () => {
+  fileiraEscondida = !fileiraEscondida;
+  localStorage.setItem('botTelaFileira', fileiraEscondida ? 'escondida' : 'visivel');
+  render();
 });
 
 // ============================================================
@@ -3412,264 +3404,318 @@ function render() {
   $('btnCam').title = myCam ? 'Desligar câmera' : 'Ligar câmera';
   $('btnShare').classList.toggle('stop', !!myStream);
   $('shareLbl').textContent = myStream ? 'Parar' : 'Transmitir';
-  $('btnGrid').disabled = liveCount === 0;
-  $('btnGrid').classList.toggle('on', mode === 'grid');
 
-  $('peopleView').style.display = mode === 'people' ? 'grid' : 'none';
-  $('watchView').style.display = mode === 'watch' ? 'flex' : 'none';
-  $('gridView').style.display = mode === 'grid' ? 'grid' : 'none';
+  // O quadro em destaque sumiu (a pessoa saiu ou parou de transmitir).
+  if (mode === 'foco' && !quadroExiste(focoKey)) { backToPeople(); return; }
 
-  if (mode === 'people') renderPeople();
-  if (mode === 'watch') renderWatch();
-  if (mode === 'grid') renderGrid();
+  // Transmissoes primeiro (sao o principal da sala), depois as pessoas, eu primeiro.
+  const ordem = [myPeerId, ...[...members.keys()].filter(id => id !== myPeerId)].filter(id => members.has(id));
+  const chaves = [
+    ...ordem.filter(id => members.get(id).broadcasting).map(id => 't:' + id),
+    ...ordem.map(id => 'p:' + id)
+  ];
+  quadros.forEach((q, k) => {
+    if (!chaves.includes(k)) { q.remove(); quadros.delete(k); }
+  });
+  chaves.forEach(atualizarQuadro);
+
+  const sala = $('salaView');
+  const emFoco = mode === 'foco';
+  sala.classList.toggle('foco', emFoco);
+  sala.classList.toggle('sem-fileira', emFoco && fileiraEscondida);
+
+  const tf = focoTela();
+  const camPorCima = !!(tf && camPref.flutuante && cameraDe(tf));
+  const resto = [];
+  chaves.forEach(k => {
+    const q = quadros.get(k);
+    const focado = emFoco && k === focoKey;
+    q.classList.toggle('focado', focado);
+    // Com a camera por cima da transmissao, o quadro dela nao se repete embaixo.
+    q.classList.toggle('escondido', camPorCima && k === 'p:' + tf);
+    if (!focado) resto.push(q);
+  });
+  colocarEm($('palco'), emFoco ? [quadros.get(focoKey)] : []);
+  colocarEm($('mosaico'), resto);
+
+  // Camera flutuante: so existe por cima da transmissao em destaque.
+  const ov = $('watchCam');
+  if (camPorCima) {
+    const qf = quadros.get(focoKey);
+    if (ov.parentElement !== qf) qf.appendChild(ov);
+    mountCam(ov, tf);
+  } else {
+    ov.classList.remove('on');
+    const v = ov.querySelector('video');
+    if (v.srcObject) v.srcObject = null;
+    if (ov.parentElement !== sala) sala.appendChild(ov);
+  }
+
+  renderFocoBar(tf, camPorCima);
+  arrumarGrade();
+  agendarArrumar();
 }
 
-// ---- tiles de pessoas (reaproveitados pra nao piscar os videos) ----
-const ptiles = new Map();
+// Poe exatamente estes quadros, nesta ordem, dentro do container. So move o
+// que esta fora do lugar: mover um <video> a toa nao para o video, mas
+// tambem nao precisa.
+function colocarEm(container, lista) {
+  lista.forEach((el, i) => {
+    if (container.children[i] !== el) container.insertBefore(el, container.children[i] || null);
+  });
+}
 
-function buildPersonTile(peerId) {
-  const tile = document.createElement('div');
-  tile.className = 'ptile';
-  tile.innerHTML = `
+function quadroExiste(chave) {
+  if (!chave) return false;
+  const m = members.get(chave.slice(2));
+  if (!m) return false;
+  return chave[0] === 'p' || !!m.broadcasting;
+}
+
+// Transmissao em destaque (o id de quem transmite), ou null.
+function focoTela() {
+  return mode === 'foco' && focoKey && focoKey[0] === 't' ? focoKey.slice(2) : null;
+}
+
+function cameraDe(id) {
+  const m = members.get(id);
+  if (!m) return null;
+  if (id === myPeerId) return myCam || null;
+  return m.camOn ? camStreams.get(id) || null : null;
+}
+
+// Som: com uma transmissao em destaque, so ela toca. Olhando uma camera ou a
+// grade, todas as que voce assiste tocam, como no Discord. A sua, nunca.
+function deveOuvir(id) {
+  if (id === myPeerId || !assistindo.has(id) || muted || volume === 0) return false;
+  const tf = focoTela();
+  return !tf || tf === id;
+}
+
+// O navegador barra som antes de a pessoa clicar na pagina. Ai toca mudo e o
+// botao de som pede o clique, em vez de a imagem ficar parada.
+function tocarVideo(v) {
+  const p = v.play();
+  if (!p || !p.catch) return;
+  p.catch(err => {
+    if (!err || err.name !== 'NotAllowedError' || v.muted) return;
+    muted = true;
+    v.muted = true;
+    pintarBotaoDeSom(true, true);
+    v.play().catch(() => {});
+  });
+}
+
+const ICO_PIP = ICO('<path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>');
+const ICO_TROCAR = ICO('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>');
+const ICO_TELA = ICO('<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>');
+
+function criarQuadro(chave) {
+  const id = chave.slice(2);
+  const q = document.createElement('div');
+  q.className = 'quadro ' + (chave[0] === 't' ? 'tela' : 'pessoa');
+  q.innerHTML = `
     <video autoplay playsinline muted></video>
     <div class="avatar"></div>
-    <div class="livechip">AO VIVO</div>
-    <div class="pipicon" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></div>
-    <div class="viewchip"></div>
-    <div class="namechip"></div>
-    <button class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
-      <span>Trocar tela</span>
-    </button>
-    <button class="watchbtn"></button>`;
-  tile.querySelector('.watchbtn').addEventListener('click', e => {
-    e.stopPropagation();
-    watchPerson(peerId);
+    <div class="capa">${ICO_TELA}<button class="assistir">Assistir</button></div>
+    <div class="framemsg"></div>
+    <div class="selos"><span class="livechip">AO VIVO</span><span class="viewchip"></span></div>
+    <div class="acoes">
+      <button class="qbtn pip" title="Pop-up (fica por cima de outras janelas)">${ICO_PIP}</button>
+      <button class="qbtn parar" title="Parar de assistir">${ICO_X}</button>
+    </div>
+    <button class="switchbtn" title="Trocar a tela/janela transmitida sem parar a transmissão">${ICO_TROCAR}<span>Trocar tela</span></button>
+    <div class="nome"></div>`;
+  q.addEventListener('click', () => clicarQuadro(chave));
+  // Duplo clique no destaque = tela cheia (o primeiro clique nao faz nada nele).
+  q.addEventListener('dblclick', e => {
+    if (e.target.closest('button, .camoverlay')) return;
+    if (mode === 'foco' && focoKey === chave) alternarTelaCheia();
   });
-  tile.querySelector('.switchbtn').addEventListener('click', e => {
-    e.stopPropagation();
-    trocarTela();
-  });
-  tile.querySelector('.pipicon').addEventListener('click', e => {
-    e.stopPropagation();
-    abrirCameraPip(tile.querySelector('video'));
-  });
-  // O quadro inteiro tambem abre a transmissao, nao so o botao.
-  tile.addEventListener('click', () => {
-    const m = members.get(peerId);
-    if (m && m.broadcasting) watchPerson(peerId);
-  });
-  return tile;
+  q.querySelector('.assistir').addEventListener('click', e => { e.stopPropagation(); clicarQuadro(chave); });
+  q.querySelector('.pip').addEventListener('click', e => { e.stopPropagation(); abrirCameraPip(q.querySelector('video')); });
+  q.querySelector('.parar').addEventListener('click', e => { e.stopPropagation(); pararDeAssistir(id); });
+  q.querySelector('.switchbtn').addEventListener('click', e => { e.stopPropagation(); trocarTela(); });
+  return q;
 }
 
-function renderPeople() {
-  const view = $('peopleView');
-  ptiles.forEach((el, id) => {
-    if (!members.has(id)) { el.remove(); ptiles.delete(id); }
-  });
+function atualizarQuadro(chave) {
+  let q = quadros.get(chave);
+  if (!q) { q = criarQuadro(chave); quadros.set(chave, q); }
+  const id = chave.slice(2);
+  const eTela = chave[0] === 't';
+  const souEu = id === myPeerId;
+  const m = members.get(id);
+  const vendo = eTela && (souEu || assistindo.has(id));
+  const fonte = eTela ? (souEu ? myStream : (vendo ? streams.get(id) || null : null)) : cameraDe(id);
 
-  // Eu primeiro, depois os outros — como o Discord.
-  const ordem = [myPeerId, ...[...members.keys()].filter(id => id !== myPeerId)];
+  q.classList.toggle('comvideo', !!fonte);
+  q.classList.toggle('capa-on', eTela && !vendo);
+  q.classList.toggle('eu', souEu);
+  q.classList.toggle('assistindo', eTela && !souEu && vendo);
 
-  ordem.forEach(id => {
-    const m = members.get(id);
-    if (!m) return;
-    let tile = ptiles.get(id);
-    if (!tile) { tile = buildPersonTile(id); ptiles.set(id, tile); }
+  const v = q.querySelector('video');
+  v.classList.toggle('self', !eTela && souEu);
+  if (eTela) {
+    v.volume = volume / 100;
+    v.muted = !deveOuvir(id);
+  }
+  if (fonte && v.srcObject !== fonte) { v.srcObject = fonte; tocarVideo(v); }
+  if (!fonte && v.srcObject) v.srcObject = null;
 
-    const cam = id === myPeerId && myStream ? myStream
-      : id === myPeerId ? myCam : camStreams.get(id);
-    const v = tile.querySelector('video');
-    tile.classList.toggle('hascam', !!cam);
-    v.classList.toggle('self', id === myPeerId);
-    if (cam && v.srcObject !== cam) { v.srcObject = cam; garantirTocando(v); }
-    if (!cam && v.srcObject) v.srcObject = null;
+  // Nome vem de outra pessoa: sempre como TEXTO, nunca como HTML.
+  q.querySelector('.avatar').textContent = initials(m.name);
+  q.querySelector('.nome').textContent = m.name + (souEu ? ' (você)' : '');
+  const noDestaque = mode === 'foco' && focoKey === chave;
+  q.title = noDestaque ? '' : (eTela && !vendo ? 'Clique para assistir' : 'Clique para ver em destaque');
 
-    tile.classList.toggle('live', !!m.broadcasting);
-    tile.querySelector('.avatar').textContent = initials(m.name);
-    tile.querySelector('.namechip').textContent = m.name + (m.isMe ? ' (você)' : '');
+  if (eTela && souEu) {
+    const vc = q.querySelector('.viewchip');
+    const nomes = [...watchers].map(w => (members.get(w) || {}).name).filter(Boolean);
+    vc.innerHTML = ICO_OLHO + watchers.size;
+    vc.title = nomes.length ? 'Assistindo: ' + nomes.join(', ') : 'Ninguém assistindo ainda';
+  }
 
-    const wb = tile.querySelector('.watchbtn');
-    wb.textContent = m.isMe ? 'Ver minha transmissão' : 'Assistir transmissão';
-
-    // Só quem está transmitindo vê o botão de troca rápida, e só no próprio quadro.
-    tile.querySelector('.switchbtn').style.display = (m.isMe && myStream) ? 'inline-flex' : 'none';
-
-    const vc = tile.querySelector('.viewchip');
-    if (m.isMe && myStream) {
-      vc.style.display = 'block';
-      const nomes = [...watchers].map(id2 => (members.get(id2) || {}).name).filter(Boolean);
-      vc.innerHTML = ICO_OLHO + watchers.size;
-      vc.title = nomes.length ? 'Assistindo: ' + nomes.join(', ') : 'Ninguém assistindo ainda';
-    } else vc.style.display = 'none';
-
-    view.appendChild(tile);
-  });
+  // Abri a transmissao mas a imagem ainda nao chegou.
+  const msg = q.querySelector('.framemsg');
+  let estado = '';
+  if (eTela && vendo && !souEu && !fonte) estado = connState.get(id) === 'falhou' ? 'falhou' : 'conectando';
+  if (msg.dataset.estado !== estado) {
+    msg.dataset.estado = estado;
+    msg.classList.toggle('on', !!estado);
+    msg.innerHTML = estado === 'falhou'
+      ? `<div class="big">${ICO_BLOQ}</div>
+         <div class="t">Não consegui receber esta transmissão</div>
+         <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o botão "Testar conexão" lá em cima para testar.</div>`
+      : estado === 'conectando'
+      ? `<div class="big">${ICO_ESPERA}</div>
+         <div class="t">Conectando...</div>
+         <div class="d">Se ficar assim por mais de 20 segundos, aparece aqui o motivo.</div>`
+      : '';
+  }
+  return q;
 }
 
-// ---- assistindo uma transmissao ----
-function renderWatch() {
-  const m = members.get(watchTarget);
-  if (!m) return backToPeople();
+function clicarQuadro(chave) {
+  if (mode === 'foco' && focoKey === chave) return;
+  navigateTo('foco', chave);
+}
 
-  // O nome vem de outro usuario: vai como TEXTO. Com innerHTML, alguem que
-  // se chamasse "<img src=x onerror=...>" rodaria codigo em quem o assistisse.
+function pararDeAssistir(id) {
+  assistindo.delete(id);
+  syncSubs(desiredSubs());
+  if (focoKey === 't:' + id) voltar();
+  else render();
+}
+
+// Barra de cima do destaque: voltar, nome, qualidade, som, tela cheia.
+function renderFocoBar(tf, camPorCima) {
+  if (mode !== 'foco') return;
+  const id = focoKey.slice(2);
+  const m = members.get(id);
+  const souEu = id === myPeerId;
+
   const who = $('watchWho');
-  const selo = document.createElement('span');
-  selo.className = 'live-badge';
-  selo.textContent = 'AO VIVO';
-  who.replaceChildren(selo, document.createTextNode(m.name + (m.isMe ? ' — sua transmissão' : '')));
+  if (tf) {
+    const selo = document.createElement('span');
+    selo.className = 'live-badge';
+    selo.textContent = 'AO VIVO';
+    who.replaceChildren(selo, document.createTextNode(m.name + (souEu ? ' — sua transmissão' : '')));
+  } else {
+    who.replaceChildren(document.createTextNode(m.name + (souEu ? ' (você)' : '')));
+  }
 
   // O botao diz pra ONDE volta, em vez de um "voltar" generico.
-  const anterior = [...viewStack].reverse().find(v =>
-    v.mode !== 'watch' || (members.get(v.watchTarget) || {}).broadcasting);
+  const anterior = [...viewStack].reverse().find(v => v.mode !== 'foco' || quadroExiste(v.focoKey));
   let destino = 'a sala';
-  if (anterior) {
-    if (anterior.mode === 'grid') destino = 'a grade';
-    else if (anterior.mode === 'watch') {
-      const mm = members.get(anterior.watchTarget);
-      destino = mm ? mm.name : 'a sala';
-    }
+  if (anterior && anterior.mode === 'foco') {
+    const mm = members.get(anterior.focoKey.slice(2));
+    if (mm) destino = (anterior.focoKey[0] === 't' ? 'a tela de ' : 'a câmera de ') + mm.name;
   }
   $('btnBackTxt').textContent = 'Voltar para ' + destino;
 
-  mountCam($('watchCam'), watchTarget);
-  renderCamStrip();
-  const camDisponivel = !!(watchTarget === myPeerId ? myCam : camStreams.get(watchTarget)) && m.camOn;
-  $('btnShowCam').style.display = (camDisponivel && camPref.hidden) ? '' : 'none';
+  const temCam = !!(tf && cameraDe(tf));
+  const bc = $('btnShowCam');
+  bc.style.display = temCam ? '' : 'none';
+  bc.classList.toggle('on', camPorCima);
+  bc.title = camPorCima ? 'Tirar a câmera de cima da transmissão'
+    : 'Mostrar a câmera de ' + m.name + ' por cima da transmissão';
 
-  // Botao de troca rapida de tela: so quando estou vendo a MINHA transmissao.
-  $('btnTrocarTela').style.display = (watchTarget === myPeerId && myStream) ? 'inline-flex' : 'none';
+  // Volume: na transmissao de outra pessoa, ou numa camera enquanto as
+  // transmissoes que assisto tocam embaixo (elas continuam com som).
+  const ouvindoAlguem = tf ? !souEu : [...assistindo].some(a => a !== myPeerId && quadroExiste('t:' + a));
+  $('volCtl').style.display = ouvindoAlguem ? '' : 'none';
 
-  const video = $('watchVideo');
-  const stream = watchTarget === myPeerId ? myStream : streams.get(watchTarget);
+  const outros = [...$('mosaico').children].some(q => !q.classList.contains('escondido'));
+  const bf = $('btnFileira');
+  bf.style.display = outros ? '' : 'none';
+  bf.querySelector('span').textContent = fileiraEscondida ? 'Mostrar miniaturas' : 'Esconder miniaturas';
+  bf.title = bf.querySelector('span').textContent;
+  $('btnFs').title = 'Tela cheia (ou duplo clique na tela)';
+}
 
-  const msg = $('watchMsg');
-  const estado = connState.get(watchTarget);
-  if (stream) {
-    msg.classList.remove('on');
-  } else if (estado === 'falhou') {
-    msg.classList.add('on');
-    msg.innerHTML = `<div class="big">${ICO_BLOQ}</div>
-      <div class="t">Não consegui receber esta transmissão</div>
-      <div class="d">Sua rede está bloqueando a conexão. Tente trocar de rede (Wi-Fi ↔ celular) ou ligar uma VPN, e use o botão "Testar conexão" lá em cima para testar.</div>`;
+// Divide o espaco entre os quadros como o Discord: testa cada numero de
+// colunas e fica com o que deixa os quadros (16:9) maiores sem passar da area.
+function arrumarGrade() {
+  const mosaico = $('mosaico');
+  const tiles = [...mosaico.children].filter(q => !q.classList.contains('escondido'));
+  if (mode === 'foco') {
+    // No destaque o tamanho vem do CSS: tira a largura que a grade tinha
+    // posto (inclusive no quadro que acabou de subir para o palco).
+    quadros.forEach(q => { if (q.style.width) q.style.width = ''; });
+    return;
+  }
+  const n = tiles.length;
+  const W = mosaico.clientWidth, H = mosaico.clientHeight;
+  if (!n || !W) return;
+  const G = 12;
+  let largura = 0;
+  if (window.innerWidth <= 760 || !H) {
+    const c = n === 1 ? 1 : 2;
+    largura = (W - G * (c - 1)) / c;
   } else {
-    msg.classList.add('on');
-    msg.innerHTML = `<div class="big">${ICO_ESPERA}</div>
-      <div class="t">Conectando à transmissão...</div>
-      <div class="d">Se ficar assim por mais de 20 segundos, aparece aqui o motivo.</div>`;
+    for (let c = 1; c <= n; c++) {
+      const r = Math.ceil(n / c);
+      const w = Math.min((W - G * (c - 1)) / c, ((H - G * (r - 1)) / r) * 16 / 9);
+      if (w > largura) largura = w;
+    }
+    // Com muita gente, em vez de quadros minusculos, a grade passa a rolar.
+    largura = Math.max(largura, Math.min(200, W));
   }
-
-  const souEu = watchTarget === myPeerId;
-  $('btnMute').style.display = souEu ? 'none' : '';
-  $('volCtl').style.display = souEu ? 'none' : '';   // a propria tela e sempre muda
-
-  if (stream && video.srcObject !== stream) {
-    video.srcObject = stream;
-    video.volume = volume / 100;
-    video.muted = souEu || muted || volume === 0;
-    video.play().catch(() => {
-      video.muted = true; muted = true;
-      pintarBotaoDeSom(true, true);
-      video.play().catch(() => {});
-    });
-  }
-  if (!stream && video.srcObject) video.srcObject = null;
-
-  // Seletor sempre visivel com TODAS as transmissoes numeradas — a atual
-  // fica destacada. Trocar direto, sem precisar voltar antes.
-  const row = $('switchRow');
-  const live = [...members.entries()].filter(([, mm]) => mm.broadcasting);
-  row.innerHTML = '';
-  if (live.length > 1) {
-    const lbl = document.createElement('span');
-    lbl.className = 'lbl';
-    lbl.textContent = 'Transmissões:';
-    row.appendChild(lbl);
-    live.forEach(([id, mm], i) => {
-      const b = document.createElement('button');
-      b.className = 'ghost' + (id === watchTarget ? ' on' : '');
-      b.textContent = `${i + 1} · ${mm.name}${id === myPeerId ? ' (você)' : ''}`;
-      if (id !== watchTarget) b.addEventListener('click', () => watchPerson(id));
-      row.appendChild(b);
-    });
-  }
+  const px = Math.floor(largura) + 'px';
+  tiles.forEach(q => { if (q.style.width !== px) q.style.width = px; });
 }
 
-// ---- grade de todas as transmissoes ----
-const gtiles = new Map();
-
-function buildGridTile(peerId) {
-  const tile = document.createElement('div');
-  tile.className = 'gtile';
-  const v = document.createElement('video');
-  v.autoplay = true; v.playsInline = true;
-  tile.appendChild(v);
-
-  const cam = document.createElement('div');
-  cam.className = 'camoverlay';
-  cam.innerHTML = `<video autoplay playsinline muted></video>
-    <div class="camctl">
-      <button data-act="pip" title="Pop-up (fica por cima de outras janelas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/></svg></button>
-      <button data-act="size" title="Tamanho">M</button>
-      <button data-act="hide" title="Esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-    </div>
-    <div class="camhint">arraste para mover</div>`;
-  tile.appendChild(cam);
-
-  const bar = document.createElement('div');
-  bar.className = 'bar';
-  bar.innerHTML = '<span class="who"></span>';
-  if (peerId !== myPeerId) {
-    const b = document.createElement('button');
-    b.textContent = 'Só esta';
-    b.addEventListener('click', () => watchPerson(peerId));
-    bar.appendChild(b);
-  }
-  const fs = document.createElement('button');
-  fs.innerHTML = ICO_CHEIA; fs.title = 'Tela cheia';
-  fs.addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else tile.requestFullscreen().catch(() => {});
+let arrumarPendente = false;
+function agendarArrumar() {
+  if (arrumarPendente) return;
+  arrumarPendente = true;
+  requestAnimationFrame(() => {
+    arrumarPendente = false;
+    arrumarGrade();
+    pedirQualidades();
   });
-  bar.appendChild(fs);
-  tile.appendChild(bar);
-  return tile;
 }
+new ResizeObserver(agendarArrumar).observe($('salaView'));
 
-function renderGrid() {
-  const grid = $('gridView');
-  const live = [...members.entries()].filter(([, m]) => m.broadcasting);
-  const liveIds = new Set(live.map(([id]) => id));
-
-  gtiles.forEach((el, id) => {
-    if (!liveIds.has(id)) { el.remove(); gtiles.delete(id); }
+// Transmissao pequena na tela (miniatura, grade cheia de gente) nao precisa
+// de 720p. Cada pessoa que assiste recebe uma copia separada, entao da para
+// pedir a quem transmite uma copia menor so para mim: alivia a internet dele.
+const LARGURA_CHEIA = 560;
+function pedirQualidades() {
+  if (!ws || ws.readyState !== ws.OPEN) return;
+  const semFileira = $('salaView').classList.contains('sem-fileira');
+  assistindo.forEach(id => {
+    if (id === myPeerId || !subscribed.has(id)) return;
+    const q = quadros.get('t:' + id);
+    if (!q || !q.isConnected) return;
+    const visivel = !q.classList.contains('escondido') && !(semFileira && !q.classList.contains('focado'));
+    const largura = visivel ? q.getBoundingClientRect().width : 0;
+    const nivel = largura >= LARGURA_CHEIA ? 'cheia' : 'mini';
+    if (qualidadeEnviada.get(id) === nivel) return;
+    qualidadeEnviada.set(id, nivel);
+    ws.send(JSON.stringify({ type: 'watch-quality', target: id, nivel }));
   });
-  const emptyMsg = grid.querySelector('.empty');
-  if (emptyMsg) emptyMsg.remove();
-
-  grid.style.gridTemplateColumns =
-    `repeat(${Math.min(Math.ceil(Math.sqrt(Math.max(live.length, 1))), 3)}, 1fr)`;
-
-  live.forEach(([id, m]) => {
-    let tile = gtiles.get(id);
-    if (!tile) { tile = buildGridTile(id); gtiles.set(id, tile); }
-    const v = tile.querySelector(':scope > video');
-    const stream = id === myPeerId ? myStream : streams.get(id);
-    if (stream && v.srcObject !== stream) v.srcObject = stream;
-    if (!stream && v.srcObject) v.srcObject = null;
-    v.muted = (id === myPeerId) || muted;
-    mountCam(tile.querySelector('.camoverlay'), id);
-    tile.querySelector('.who').textContent = m.name + (id === myPeerId ? ' (você)' : '');
-    grid.appendChild(tile);
-  });
-
-  if (!live.length) {
-    const d = document.createElement('div');
-    d.className = 'empty';
-    d.textContent = 'Ninguém está transmitindo agora.';
-    grid.appendChild(d);
-  }
 }
 
 // ============================================================
@@ -3746,7 +3792,7 @@ function renderGrid() {
   const ultimoGlow = new WeakMap();
 
   function atualizarGlow(x, y) {
-    const cards = document.querySelectorAll('.ptile, .camtile, .gtile, #chatPanel, #musicPanel, #controls, .ctl button, .modal');
+    const cards = document.querySelectorAll('.quadro, #chatPanel, #musicPanel, #controls, .ctl button, .modal');
     // Primeiro LE todas as posicoes, depois ESCREVE. Intercalar as duas coisas
     // obrigava o navegador a recalcular o layout da pagina inteira uma vez por
     // card, a cada movimento do mouse.

@@ -774,6 +774,18 @@ roomWss.on('connection', (ws) => {
       }, myId);
     }
 
+    // Qualidade que quem assiste quer de uma transmissao: 'mini' quando ela
+    // esta pequena na tela dele (miniatura), 'cheia' quando esta em destaque.
+    // Quem transmite ajusta so a copia que vai para essa pessoa.
+    if (msg.type === 'watch-quality' && myRoom) {
+      const room = rooms.get(myRoom);
+      const target = room && room.get(msg.target);
+      if (target && room.get(myId)) {
+        sendTo(target.ws, { type: 'quality-request', from: myId, nivel: msg.nivel === 'mini' ? 'mini' : 'cheia' });
+      }
+      return;
+    }
+
     // Assinatura sob demanda: ninguem recebe video sem pedir.
     // O espectador avisa "quero ver o fulano" e o servidor repassa pro fulano,
     // que so entao inicia a chamada. E assim que o Discord funciona — voce nao
